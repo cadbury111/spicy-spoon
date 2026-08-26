@@ -96,6 +96,72 @@
   border-color: transparent;
 }
 
+.sidebar-nav-divider {
+  margin: 14px 0 6px 0;
+  padding: 0 6px;
+}
+
+.sidebar-nav-divider span {
+  font-size: 0.65rem;
+  font-weight: 800;
+  letter-spacing: 1px;
+  color: #8c7b70;
+}
+
+.kds-link-btn {
+  background: rgba(234, 88, 12, 0.12) !important;
+  border: 1px solid rgba(234, 88, 12, 0.35) !important;
+  color: #fed7aa !important;
+  font-weight: 700 !important;
+}
+
+.kds-link-btn:hover {
+  background: rgba(234, 88, 12, 0.25) !important;
+  color: #ffffff !important;
+}
+
+.external-link-btn {
+  color: #a89487 !important;
+}
+
+.external-link-btn:hover {
+  color: #ffffff !important;
+}
+
+.btn-topbar-link {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.45rem 0.85rem;
+  border-radius: 8px;
+  font-size: 0.82rem;
+  font-weight: 700;
+  text-decoration: none;
+  transition: all 0.2s ease;
+}
+
+.btn-topbar-link.kds-btn {
+  background: rgba(234, 88, 12, 0.18);
+  border: 1px solid rgba(234, 88, 12, 0.4);
+  color: #fdba74;
+}
+
+.btn-topbar-link.kds-btn:hover {
+  background: rgba(234, 88, 12, 0.35);
+  color: #ffffff;
+}
+
+.btn-topbar-link.menu-btn {
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  color: #d1c7bd;
+}
+
+.btn-topbar-link.menu-btn:hover {
+  background: rgba(255, 255, 255, 0.12);
+  color: #ffffff;
+}
+
 .sidebar-footer {
   padding-top: 1.25rem;
   border-top: 1px solid rgba(255, 255, 255, 0.08);

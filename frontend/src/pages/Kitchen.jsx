@@ -1,4 +1,3 @@
-import { useEffect, useState, useCallback, useMemo } from "react";
 import {
   ChefHat,
   Clock,
@@ -11,6 +10,7 @@ import {
   Sparkles,
   ArrowLeft,
   Volume2,
+  ShieldCheck,
 } from "lucide-react";
 import { api } from "../api";
 import { useWebSocket } from "../hooks/useWebSocket";
@@ -112,6 +112,16 @@ function Kitchen({ onLogout }) {
         </div>
 
         <div className="kds-top-actions">
+          <a href="#/admin" className="kds-nav-btn admin-btn" title="Switch to Admin Dashboard">
+            <ShieldCheck size={16} />
+            <span>Admin Portal</span>
+          </a>
+
+          <a href="#/order?table=T1" className="kds-nav-btn menu-btn" title="View Customer Digital Menu">
+            <Utensils size={16} />
+            <span>Customer Menu</span>
+          </a>
+
           <div className="kds-profile-badge">
             <span>{currentStaff.name}</span>
             <span className="kds-role-pill">KITCHEN</span>

@@ -323,6 +323,25 @@ function Admin({ onLogout }) {
               </button>
             );
           })}
+
+          <div className="sidebar-nav-divider">
+            <span>QUICK ACCESS</span>
+          </div>
+
+          <a href="#/kitchen" className="nav-tab-btn kds-link-btn" title="Open Dedicated Kitchen KDS">
+            <ChefHat size={18} />
+            <span>Open Kitchen KDS 👨‍🍳</span>
+          </a>
+
+          <a href="#/order?table=T1" className="nav-tab-btn external-link-btn" title="Open Customer Menu">
+            <ShoppingBag size={18} />
+            <span>Customer Menu 🍽️</span>
+          </a>
+
+          <a href="#/restaurant/spicy-spoon/tables" className="nav-tab-btn external-link-btn" title="Open Table Booking">
+            <Calendar size={18} />
+            <span>Table Booking 📅</span>
+          </a>
         </nav>
 
         <div className="sidebar-footer">
@@ -342,6 +361,16 @@ function Admin({ onLogout }) {
           </div>
 
           <div className="topbar-actions">
+            <a href="#/kitchen" className="btn-topbar-link kds-btn" title="Switch to Kitchen KDS">
+              <ChefHat size={16} />
+              <span>Kitchen KDS</span>
+            </a>
+
+            <a href="#/order?table=T1" className="btn-topbar-link menu-btn" title="View Customer Menu">
+              <ShoppingBag size={16} />
+              <span>Customer Menu</span>
+            </a>
+
             <div className="staff-profile-chip">
               <ShieldCheck size={16} className="profile-icon" />
               <span>{currentUser.name}</span>
