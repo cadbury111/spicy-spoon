@@ -47,7 +47,10 @@ async function runTests() {
 
   try {
     // Generate dynamic date for fresh test run
-    const testDate = `2026-11-${String(Math.floor(10 + Math.random() * 18)).padStart(2, "0")}`;
+    const randomYear = 2028 + Math.floor(Math.random() * 10);
+    const randomMonth = String(1 + Math.floor(Math.random() * 12)).padStart(2, "0");
+    const randomDay = String(1 + Math.floor(Math.random() * 28)).padStart(2, "0");
+    const testDate = `${randomYear}-${randomMonth}-${randomDay}`;
 
     // Admin login for staff endpoints
     const authRes = await req("/api/auth/login", "POST", { username: "admin", password: "admin123" });
@@ -246,4 +249,10 @@ async function runTests() {
   }
 }
 
-setTimeout(runTests, 1200);
+if (!server.listening) {
+  server.listen(5000, () => {
+    setTimeout(runTests, 300);
+  });
+} else {
+  setTimeout(runTests, 300);
+}

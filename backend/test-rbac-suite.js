@@ -180,4 +180,10 @@ async function runRbacTestSuite() {
   }
 }
 
-setTimeout(runRbacTestSuite, 1200);
+if (!server.listening) {
+  server.listen(5000, () => {
+    setTimeout(runRbacTestSuite, 300);
+  });
+} else {
+  setTimeout(runRbacTestSuite, 300);
+}
