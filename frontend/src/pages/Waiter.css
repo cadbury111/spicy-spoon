@@ -1,0 +1,575 @@
+/* ====================================================
+   WAITER TERMINAL CSS
+   Fast Touch-Friendly Floor Management
+==================================================== */
+
+.waiter-terminal-page {
+  min-height: 100vh;
+  background-color: #0c0806;
+  color: #f3f4f6;
+  font-family: 'Outfit', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  display: flex;
+  flex-direction: column;
+}
+
+.waiter-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 1rem 1.5rem;
+  background: #170f0b;
+  border-bottom: 1px solid #2d1a10;
+}
+
+.waiter-brand {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+}
+
+.back-btn {
+  color: #9ca3af;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.05);
+  text-decoration: none;
+}
+
+.back-btn:hover {
+  background: #e65100;
+  color: #fff;
+}
+
+.waiter-brand h1 {
+  font-size: 1.25rem;
+  font-weight: 800;
+  margin: 0;
+  color: #fff;
+}
+
+.waiter-brand p {
+  font-size: 0.75rem;
+  color: #9ca3af;
+  margin: 0;
+  text-transform: uppercase;
+}
+
+.refresh-btn {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.55rem 1rem;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  color: #fff;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.cash-requests-banner {
+  margin: 1.25rem 1.5rem 0 1.5rem;
+  padding: 1rem 1.25rem;
+  background: linear-gradient(135deg, rgba(245, 158, 11, 0.15), rgba(217, 119, 6, 0.15));
+  border: 1px solid rgba(245, 158, 11, 0.4);
+  border-radius: 12px;
+}
+
+.cash-alert-header {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  color: #fbbf24;
+  margin-bottom: 0.75rem;
+}
+
+.cash-alert-header h4 {
+  margin: 0;
+  font-size: 0.95rem;
+  font-weight: 800;
+}
+
+.cash-cards-row {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.cash-req-card {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  background: rgba(0, 0, 0, 0.4);
+  padding: 0.75rem 1rem;
+  border-radius: 8px;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.cash-req-card strong {
+  display: block;
+  font-size: 1rem;
+  color: #fff;
+}
+
+.cash-req-card span {
+  font-size: 0.8rem;
+  color: #fbbf24;
+}
+
+.confirm-cash-btn {
+  padding: 0.55rem 1.25rem;
+  border-radius: 8px;
+  background: #10b981;
+  color: #fff;
+  border: none;
+  font-weight: 700;
+  font-size: 0.85rem;
+  cursor: pointer;
+}
+
+.waiter-tables-container {
+  padding: 1.5rem;
+  flex: 1;
+}
+
+.section-title-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 1.25rem;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+}
+
+.section-title-row h2 {
+  font-size: 1.25rem;
+  font-weight: 800;
+  margin: 0;
+  color: #fff;
+}
+
+.legend-pills {
+  display: flex;
+  gap: 0.75rem;
+  font-size: 0.8rem;
+  font-weight: 600;
+}
+
+.legend.available { color: #10b981; }
+.legend.occupied { color: #f59e0b; }
+.legend.payment { color: #a855f7; }
+
+.tables-pos-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  gap: 1.25rem;
+}
+
+.waiter-table-card {
+  background: #19100a;
+  border: 1px solid #331d10;
+  border-radius: 14px;
+  padding: 1.25rem;
+  display: flex;
+  flex-direction: column;
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.4);
+  transition: transform 0.2s;
+}
+
+.waiter-table-card:hover {
+  transform: translateY(-2px);
+}
+
+.table-card-top {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 0.5rem;
+}
+
+.table-id-tag {
+  font-size: 1.35rem;
+  font-weight: 900;
+  color: #fff;
+}
+
+.capacity-badge {
+  font-size: 0.75rem;
+  color: #ffb300;
+  background: rgba(255, 179, 0, 0.1);
+  padding: 2px 6px;
+  border-radius: 4px;
+  margin-left: 6px;
+}
+
+.status-pill {
+  font-size: 0.7rem;
+  font-weight: 800;
+  padding: 3px 8px;
+  border-radius: 6px;
+  text-transform: uppercase;
+}
+
+.status-pill.available {
+  background: rgba(16, 185, 129, 0.15);
+  color: #10b981;
+}
+
+.status-pill.occupied, .status-pill.order_placed {
+  background: rgba(245, 158, 11, 0.15);
+  color: #f59e0b;
+}
+
+.status-pill.payment_pending {
+  background: rgba(168, 85, 247, 0.15);
+  color: #c084fc;
+}
+
+.table-section-txt {
+  font-size: 0.75rem;
+  color: #9ca3af;
+  margin: 0 0 0.75rem 0;
+}
+
+.table-details-box {
+  background: rgba(0, 0, 0, 0.25);
+  padding: 0.75rem;
+  border-radius: 8px;
+  margin-bottom: 1rem;
+  flex: 1;
+}
+
+.customer-info, .order-total-info, .empty-info {
+  margin: 0;
+  font-size: 0.85rem;
+}
+
+.empty-info {
+  color: #6b7280;
+  font-style: italic;
+}
+
+.order-total-info {
+  color: #ffb300;
+  margin-top: 4px;
+}
+
+.table-action-buttons {
+  display: flex;
+  gap: 0.5rem;
+}
+
+.take-order-btn, .bill-btn, .clear-tbl-btn {
+  padding: 0.6rem 0.85rem;
+  border-radius: 8px;
+  border: none;
+  font-weight: 700;
+  font-size: 0.85rem;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.35rem;
+}
+
+.take-order-btn {
+  flex: 1;
+  background: #e65100;
+  color: #fff;
+}
+
+.bill-btn {
+  background: rgba(255, 179, 0, 0.18);
+  color: #ffb300;
+  border: 1px solid rgba(255, 179, 0, 0.3);
+}
+
+.clear-tbl-btn {
+  background: rgba(16, 185, 129, 0.15);
+  color: #10b981;
+}
+
+/* ================= WAITER ORDER MODAL ================= */
+.waiter-order-modal {
+  background: #19100a;
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  border-radius: 20px;
+  width: 90%;
+  max-width: 800px;
+  max-height: 85vh;
+  margin: auto;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.order-modal-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 1.25rem 1.5rem;
+  background: rgba(0, 0, 0, 0.3);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.order-modal-header h3 {
+  font-size: 1.25rem;
+  margin: 0;
+  color: #fff;
+}
+
+.order-modal-header p {
+  font-size: 0.8rem;
+  color: #9ca3af;
+  margin: 2px 0 0 0;
+}
+
+.order-modal-layout {
+  display: grid;
+  grid-template-columns: 1.4fr 1fr;
+  flex: 1;
+  overflow: hidden;
+}
+
+@media (max-width: 650px) {
+  .order-modal-layout {
+    grid-template-columns: 1fr;
+    overflow-y: auto;
+  }
+}
+
+.menu-selector-col {
+  padding: 1.25rem;
+  border-right: 1px solid rgba(255, 255, 255, 0.08);
+  display: flex;
+  flex-direction: column;
+  overflow-y: auto;
+}
+
+.search-and-cats input {
+  width: 100%;
+  padding: 0.65rem 1rem;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  color: #fff;
+  box-sizing: border-box;
+  margin-bottom: 0.5rem;
+}
+
+.cat-filter-chips {
+  display: flex;
+  gap: 0.35rem;
+  overflow-x: auto;
+  margin-bottom: 0.75rem;
+}
+
+.cat-filter-chips .chip {
+  padding: 0.3rem 0.75rem;
+  border-radius: 15px;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  color: #9ca3af;
+  font-size: 0.75rem;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.cat-filter-chips .chip.active {
+  background: #e65100;
+  color: #fff;
+}
+
+.waiter-menu-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  overflow-y: auto;
+}
+
+.waiter-dish-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 0.65rem 0.85rem;
+  background: rgba(255, 255, 255, 0.03);
+  border-radius: 8px;
+}
+
+.waiter-dish-row h4 {
+  font-size: 0.95rem;
+  margin: 0 0 2px 0;
+}
+
+.waiter-dish-row span {
+  font-size: 0.8rem;
+  color: #ffb300;
+}
+
+.add-dish-btn {
+  padding: 0.35rem 0.75rem;
+  border-radius: 6px;
+  background: rgba(230, 81, 0, 0.2);
+  border: 1px solid #e65100;
+  color: #ff9e80;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.cart-ticket-col {
+  padding: 1.25rem;
+  display: flex;
+  flex-direction: column;
+  background: rgba(0, 0, 0, 0.2);
+}
+
+.cart-ticket-col h4 {
+  font-size: 1rem;
+  margin: 0 0 0.75rem 0;
+}
+
+.guest-input-box {
+  margin-bottom: 0.75rem;
+}
+
+.guest-input-box label {
+  font-size: 0.75rem;
+  color: #9ca3af;
+  display: block;
+  margin-bottom: 2px;
+}
+
+.guest-input-box input {
+  width: 100%;
+  padding: 0.5rem 0.75rem;
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  color: #fff;
+  box-sizing: border-box;
+}
+
+.ticket-items-scroll {
+  flex: 1;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.ticket-cart-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 0.5rem;
+  background: rgba(255, 255, 255, 0.03);
+  border-radius: 6px;
+}
+
+.price-calc {
+  display: block;
+  font-size: 0.8rem;
+  color: #ffb300;
+}
+
+.qty-controls {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.qty-controls button {
+  width: 24px;
+  height: 24px;
+  border-radius: 4px;
+  background: rgba(255, 255, 255, 0.1);
+  color: #fff;
+  border: none;
+  cursor: pointer;
+}
+
+.ticket-total-bar {
+  display: flex;
+  justify-content: space-between;
+  padding: 0.75rem 0;
+  border-top: 1px dashed rgba(255, 255, 255, 0.15);
+  margin-top: 0.5rem;
+  font-size: 1.1rem;
+}
+
+.send-kitchen-btn {
+  width: 100%;
+  padding: 0.85rem;
+  border-radius: 10px;
+  background: #e65100;
+  color: #fff;
+  border: none;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.send-kitchen-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* ================= BILL SETTLE MODAL ================= */
+.waiter-bill-modal {
+  background: #19100a;
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  border-radius: 16px;
+  max-width: 440px;
+  width: 100%;
+  margin: auto;
+  overflow: hidden;
+}
+
+.bill-modal-content {
+  padding: 1.25rem;
+}
+
+.bill-math-list {
+  background: rgba(0, 0, 0, 0.3);
+  border-radius: 10px;
+  padding: 1rem;
+  margin-bottom: 1.25rem;
+}
+
+.b-row {
+  display: flex;
+  justify-content: space-between;
+  font-size: 0.85rem;
+  color: #9ca3af;
+  margin-bottom: 0.35rem;
+}
+
+.b-row.disc { color: #10b981; }
+
+.b-row.grand {
+  font-size: 1.2rem;
+  color: #fff;
+  border-top: 1px dashed rgba(255, 255, 255, 0.12);
+  padding-top: 0.5rem;
+  margin-top: 0.5rem;
+  margin-bottom: 0;
+}
+
+.cash-settle-btn {
+  width: 100%;
+  padding: 0.9rem;
+  border-radius: 10px;
+  background: #10b981;
+  color: #fff;
+  border: none;
+  font-weight: 800;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+}

@@ -1,0 +1,380 @@
+/* ==========================================================================
+   SPICY SPOON KITCHEN DISPLAY SYSTEM (KDS) CSS
+   High-Contrast Dark Expediting Station Theme
+   ========================================================================== */
+
+.kitchen-kds-page {
+  min-height: 100vh;
+  background-color: #0c0704;
+  background-image: radial-gradient(circle at 50% 0%, #1a0f08 0%, #0c0704 100%);
+  color: #f3f4f6;
+  font-family: 'Outfit', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  display: flex;
+  flex-direction: column;
+  overflow-x: hidden;
+}
+
+/* ================= TOPBAR ================= */
+.kds-topbar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 1.25rem 2rem;
+  background: #140d09;
+  border-bottom: 2px solid #2d1a10;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.6);
+  position: sticky;
+  top: 0;
+  z-index: 40;
+}
+
+.kds-brand-left {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+}
+
+.kds-logo-icon {
+  width: 48px;
+  height: 48px;
+  border-radius: 12px;
+  background: linear-gradient(135deg, #ff4500, #ff8c00);
+  color: #ffffff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 4px 12px rgba(255, 69, 0, 0.35);
+}
+
+.kds-brand-left h2 {
+  font-size: 1.35rem;
+  font-weight: 900;
+  letter-spacing: 1.5px;
+  margin: 0;
+  color: #ffffff;
+}
+
+.kds-brand-left h2 span {
+  color: #ff5722;
+}
+
+.kds-sub {
+  font-size: 0.75rem;
+  color: #a89487;
+  margin: 2px 0 0 0;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+}
+
+.kds-top-actions {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+}
+
+.kds-profile-badge {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  background: #1e110a;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  padding: 0.45rem 0.9rem;
+  border-radius: 30px;
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: #ffffff;
+}
+
+.kds-role-pill {
+  font-size: 0.68rem;
+  font-weight: 800;
+  background: #3b82f6;
+  color: #ffffff;
+  padding: 1px 7px;
+  border-radius: 10px;
+}
+
+.kds-btn-refresh {
+  background: #25160e;
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  color: #f5e6dc;
+  padding: 0.55rem 1rem;
+  border-radius: 8px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.85rem;
+  font-weight: 600;
+  transition: all 0.2s ease;
+}
+
+.kds-btn-refresh:hover {
+  background: #331e13;
+  color: #ff5722;
+}
+
+.kds-btn-logout {
+  background: rgba(239, 68, 68, 0.15);
+  border: 1px solid rgba(239, 68, 68, 0.3);
+  color: #fca5a5;
+  padding: 0.55rem 1rem;
+  border-radius: 8px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.85rem;
+  font-weight: 700;
+  transition: all 0.2s ease;
+}
+
+.kds-btn-logout:hover {
+  background: #ef4444;
+  color: #ffffff;
+}
+
+/* ================= KDS LANES BOARD ================= */
+.kds-board-lanes {
+  flex: 1;
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 1.25rem;
+  padding: 1.5rem 2rem;
+  overflow-x: auto;
+  align-items: flex-start;
+  box-sizing: border-box;
+}
+
+.kds-lane {
+  background: #150d09;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 18px;
+  display: flex;
+  flex-direction: column;
+  max-height: calc(100vh - 130px);
+  overflow: hidden;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
+}
+
+.lane-new { border-top: 4px solid #f97316; }
+.lane-accepted { border-top: 4px solid #3b82f6; }
+.lane-prep { border-top: 4px solid #eab308; }
+.lane-ready { border-top: 4px solid #22c55e; }
+
+.lane-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 1rem 1.25rem;
+  background: #1c110b;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.lane-header h3 {
+  margin: 0;
+  font-size: 0.95rem;
+  font-weight: 800;
+  letter-spacing: 0.5px;
+  color: #ffffff;
+}
+
+.count-pill {
+  font-size: 0.78rem;
+  font-weight: 900;
+  padding: 2px 8px;
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.12);
+  color: #ffffff;
+}
+
+.lane-cards-scroll {
+  padding: 1rem;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+  flex: 1;
+}
+
+.lane-empty-state {
+  text-align: center;
+  padding: 3rem 1rem;
+  color: #736155;
+  font-size: 0.88rem;
+  font-weight: 500;
+}
+
+/* ================= KDS ORDER TICKETS ================= */
+.kds-order-card {
+  background: #20130c;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 14px;
+  padding: 1.1rem;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.35);
+  display: flex;
+  flex-direction: column;
+  transition: transform 0.2s ease, border-color 0.2s ease;
+}
+
+.kds-order-card:hover {
+  transform: translateY(-2px);
+  border-color: rgba(255, 87, 34, 0.4);
+}
+
+.new-card { border-left: 4px solid #f97316; }
+.accepted-card { border-left: 4px solid #3b82f6; }
+.prep-card { border-left: 4px solid #eab308; background: #24160d; }
+.ready-card { border-left: 4px solid #22c55e; }
+
+.kds-card-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 6px;
+}
+
+.table-badge {
+  font-size: 0.95rem;
+  font-weight: 900;
+  color: #ffffff;
+  background: #2c190f;
+  padding: 3px 8px;
+  border-radius: 6px;
+  border: 1px solid rgba(255, 87, 34, 0.3);
+  margin-right: 6px;
+}
+
+.table-badge.green {
+  border-color: rgba(34, 197, 94, 0.4);
+  color: #4ade80;
+}
+
+.round-tag {
+  font-size: 0.72rem;
+  font-weight: 700;
+  color: #ff9d76;
+}
+
+.time-tag {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 0.75rem;
+  color: #a89487;
+  font-weight: 600;
+}
+
+.kds-ticket-id {
+  font-size: 0.75rem;
+  color: #8c7667;
+  font-family: monospace;
+  margin: 0 0 10px 0;
+}
+
+.kds-items-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-bottom: 14px;
+  padding: 8px 0;
+  border-top: 1px dashed rgba(255, 255, 255, 0.08);
+  border-bottom: 1px dashed rgba(255, 255, 255, 0.08);
+}
+
+.kds-dish-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  font-size: 0.9rem;
+}
+
+.dish-qty {
+  font-weight: 900;
+  font-size: 1rem;
+  color: #ff5722;
+  min-width: 24px;
+}
+
+.dish-text strong {
+  color: #ffffff;
+  font-weight: 700;
+  display: block;
+}
+
+.kds-note {
+  display: block;
+  font-size: 0.75rem;
+  color: #fed7aa;
+  font-style: italic;
+  margin-top: 2px;
+}
+
+.kds-note.highlight {
+  color: #fde047;
+  font-weight: 700;
+  background: rgba(234, 179, 8, 0.12);
+  padding: 2px 6px;
+  border-radius: 4px;
+}
+
+.kds-card-actions {
+  display: flex;
+  gap: 6px;
+}
+
+.btn-kds-action {
+  width: 100%;
+  padding: 10px 14px;
+  border-radius: 10px;
+  font-weight: 800;
+  font-size: 0.88rem;
+  border: none;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  transition: all 0.2s ease;
+}
+
+.btn-kds-action.accept {
+  background: linear-gradient(135deg, #2563eb, #1d4ed8);
+  color: #ffffff;
+  box-shadow: 0 4px 12px rgba(37, 99, 235, 0.3);
+}
+
+.btn-kds-action.prep {
+  background: linear-gradient(135deg, #eab308, #ca8a04);
+  color: #000000;
+  box-shadow: 0 4px 12px rgba(234, 179, 8, 0.35);
+}
+
+.btn-kds-action.ready {
+  background: linear-gradient(135deg, #16a34a, #15803d);
+  color: #ffffff;
+  box-shadow: 0 4px 12px rgba(22, 163, 74, 0.35);
+}
+
+.btn-kds-action.serve {
+  background: linear-gradient(135deg, #9333ea, #7e22ce);
+  color: #ffffff;
+  box-shadow: 0 4px 12px rgba(147, 51, 234, 0.35);
+}
+
+.btn-kds-action:hover {
+  transform: translateY(-2px);
+  filter: brightness(1.1);
+}
+
+@media (max-width: 1200px) {
+  .kds-board-lanes {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+
+@media (max-width: 700px) {
+  .kds-board-lanes {
+    grid-template-columns: 1fr;
+  }
+}

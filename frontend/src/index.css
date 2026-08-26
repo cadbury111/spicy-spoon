@@ -1,0 +1,142 @@
+/* ==========================================================================
+   SPICY SPOON GLOBAL DESIGN SYSTEM & FOUNDATION
+   ========================================================================== */
+
+@import url('https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800;900&family=Playfair+Display:ital,wght@0,600;0,700;0,800;0,900;1,600;1,700&display=swap');
+
+:root {
+  --font-body: 'Outfit', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  --font-serif: 'Playfair Display', Georgia, serif;
+
+  /* Brand Fire & Gold Palette */
+  --primary: #ff5722;
+  --primary-hover: #ff7043;
+  --primary-gradient: linear-gradient(135deg, #ff4500 0%, #ff7700 100%);
+  --primary-glow: rgba(255, 69, 0, 0.35);
+  
+  --gold: #d6a75c;
+  --gold-glow: rgba(214, 167, 92, 0.3);
+
+  /* Deep Luxury Dark Theme */
+  --bg-page: #0f0a07;
+  --bg-page-gradient: radial-gradient(circle at 50% 0%, #1e1109 0%, #0a0604 100%);
+  --bg-card: #160d09;
+  --bg-surface: #20120b;
+  --bg-surface-elevated: #28170e;
+  
+  /* Borders */
+  --border-subtle: rgba(255, 255, 255, 0.08);
+  --border-brand: rgba(255, 87, 34, 0.25);
+  --border-brand-glow: rgba(255, 87, 34, 0.5);
+
+  /* Text Typography Colors */
+  --text-primary: #ffffff;
+  --text-secondary: #f8f4f0;
+  --text-muted: #a89487;
+  --text-subtle: #736155;
+  --text-brand: #ff9d76;
+
+  /* Semantic State Colors */
+  --color-success: #10b981;
+  --color-success-bg: rgba(16, 185, 129, 0.12);
+  --color-warning: #f59e0b;
+  --color-warning-bg: rgba(245, 158, 11, 0.12);
+  --color-danger: #ef4444;
+  --color-danger-bg: rgba(239, 68, 68, 0.15);
+  --color-info: #3b82f6;
+
+  /* Shadows */
+  --shadow-sm: 0 4px 12px rgba(0, 0, 0, 0.3);
+  --shadow-md: 0 10px 30px rgba(0, 0, 0, 0.5);
+  --shadow-lg: 0 20px 50px rgba(0, 0, 0, 0.7);
+  --shadow-glow: 0 0 25px rgba(255, 69, 0, 0.4);
+}
+
+/* Global Reset & Base Setup */
+*, *::before, *::after {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+html {
+  scroll-behavior: smooth;
+  color-scheme: dark;
+}
+
+body {
+  background-color: var(--bg-page);
+  color: var(--text-secondary);
+  font-family: var(--font-body);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  line-height: 1.5;
+  overflow-x: hidden;
+}
+
+/* Custom Luxury Scrollbar */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: #0f0a07;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #2b180f;
+  border-radius: 4px;
+  border: 1px solid rgba(255, 69, 0, 0.2);
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #ff5722;
+}
+
+/* Base Headings & Links */
+h1, h2, h3, h4, h5, h6 {
+  color: var(--text-primary);
+  font-weight: 700;
+  letter-spacing: -0.02em;
+}
+
+a {
+  color: inherit;
+  text-decoration: none;
+  transition: all 0.2s ease;
+}
+
+button {
+  font-family: var(--font-body);
+  cursor: pointer;
+  border: none;
+  outline: none;
+}
+
+input, textarea, select {
+  font-family: var(--font-body);
+}
+
+/* Micro-animations */
+@keyframes fadeIn {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes spinSlow {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+.spin-icon {
+  animation: spinSlow 1s linear infinite;
+}
+
+/* Glassmorphic Utilities */
+.glass-panel {
+  background: rgba(22, 13, 8, 0.85);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+  border: 1px solid var(--border-brand);
+}
