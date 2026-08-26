@@ -243,6 +243,45 @@ function dispatchClientEvent(type, data = {}) {
   } catch (e) {}
 }
 
+let isHydrated = false;
+export async function hydrateFromCloudSync() {
+  if (isHydrated || typeof window === "undefined") return;
+  isHydrated = true;
+
+  try {
+    const res = await fetch(`https://ntfy.sh/${CLOUD_SYNC_TOPIC}/json?poll=1&since=24h`);
+    const text = await res.text();
+    const lines = text.trim().split("\n").filter(Boolean);
+
+    for (let i = lines.length - 1; i >= 0; i--) {
+      try {
+        const item = JSON.parse(lines[i]);
+        if (item.event === "message" && item.message) {
+          const payload = JSON.parse(item.message);
+          if (payload.tables && Array.isArray(payload.tables)) {
+            setLocalDemoData("spicy_demo_tables", payload.tables);
+          }
+          if (payload.bookings && Array.isArray(payload.bookings)) {
+            setLocalDemoData("spicy_demo_bookings", payload.bookings);
+          }
+          if (payload.orders && Array.isArray(payload.orders)) {
+            setLocalDemoData("spicy_demo_orders", payload.orders);
+          }
+          if (payload.bills && Array.isArray(payload.bills)) {
+            setLocalDemoData("spicy_demo_bills", payload.bills);
+          }
+          window.dispatchEvent(new CustomEvent("spicy_ws_event", { detail: payload }));
+          break;
+        }
+      } catch (err) {}
+    }
+  } catch (err) {}
+}
+
+if (typeof window !== "undefined") {
+  hydrateFromCloudSync();
+}
+
 function buildQueryString(params = {}) {
   const cleanParams = {};
   for (const [key, value] of Object.entries(params)) {
@@ -607,10 +646,34 @@ async function handleClientFallback(endpoint, options = {}, originalError) {
   // 5. PAYMENTS
   if (endpoint.startsWith("/payments")) {
     if (endpoint.includes("create")) {
+      const bills = getLocalDemoData("spicy_demo_bills", []);
+      const billId = body.bill_id || body.billId;
+      const targetBill = bills.find((b) => b.id === billId) || bills[0] || {
+        id: Date.now(),
+        bill_number: "INV-2026-8812",
+        grand_total: 964.28,
+        table_number: "T1",
+      };
+
       const txn = `TXN-${Date.now().toString().slice(-8)}`;
+      const upiVpa = "spicyspoon@upi";
+      const restaurantName = encodeURIComponent("Spicy Spoon Restaurant");
+      const note = encodeURIComponent(`Bill ${targetBill.bill_number}`);
+      const amountStr = Number(targetBill.grand_total || 897).toFixed(2);
+      const upiIntentUrl = `upi://pay?pa=${upiVpa}&pn=${restaurantName}&am=${amountStr}&cu=INR&tn=${note}&tr=${txn}`;
+
+      const upiQrCode = await generateQrDataUrl(upiIntentUrl);
+
       return {
         message: "Payment initialized",
-        payment: { id: Date.now(), transaction_id: txn, status: "PENDING" },
+        payment: {
+          id: Date.now(),
+          transaction_id: txn,
+          amount: targetBill.grand_total,
+          status: body.payment_method === "CASH" ? "CASH_PENDING" : "PENDING",
+        },
+        upiQrCode,
+        upiIntentUrl,
       };
     }
 

@@ -63,9 +63,9 @@ function VisualTableBooking({ slug = "spicy-spoon" }) {
   });
 
   // Fetch Tables & Availability
-  const fetchAvailability = useCallback(async () => {
+  const fetchAvailability = useCallback(async (isInitial = false) => {
     try {
-      setLoading(true);
+      if (isInitial) setLoading(true);
       setErrorMessage("");
       const data = await api.getRestaurantTables(slug, {
         date: selectedDate,
@@ -75,25 +75,31 @@ function VisualTableBooking({ slug = "spicy-spoon" }) {
       setTables(data || []);
 
       // If selected table is no longer available, unselect it
-      if (selectedTable) {
-        const updated = data.find((t) => t.id === selectedTable.id || t.table_number === selectedTable.table_number);
+      setSelectedTable((currentSelected) => {
+        if (!currentSelected) return null;
+        const updated = (data || []).find((t) => t.id === currentSelected.id || t.table_number === currentSelected.table_number);
         if (!updated || !updated.isAvailableForSlot) {
-          setSelectedTable(null);
-        } else {
-          setSelectedTable(updated);
+          return null;
         }
-      }
+        return updated;
+      });
     } catch (err) {
       console.error("Availability error:", err);
-      setErrorMessage("Could not load table availability. Please check your network.");
+      if (isInitial) {
+        setErrorMessage("Could not load table availability. Please check your network.");
+      }
     } finally {
-      setLoading(false);
+      if (isInitial) setLoading(false);
     }
-  }, [slug, selectedDate, selectedTime, guestCount, selectedTable]);
+  }, [slug, selectedDate, selectedTime, guestCount]);
 
   useEffect(() => {
-    fetchAvailability();
-  }, [selectedDate, selectedTime, guestCount]);
+    fetchAvailability(true);
+    const interval = setInterval(() => {
+      fetchAvailability(false);
+    }, 4000);
+    return () => clearInterval(interval);
+  }, [fetchAvailability]);
 
   // WebSocket Live Updates
   const handleWsEvent = useCallback(
@@ -101,9 +107,10 @@ function VisualTableBooking({ slug = "spicy-spoon" }) {
       if (
         event?.type === "NEW_BOOKING" ||
         event?.type === "TABLE_STATUS_UPDATED" ||
-        event?.type === "BOOKING_STATUS_UPDATED"
+        event?.type === "BOOKING_STATUS_UPDATED" ||
+        event?.type === "PAYMENT_COMPLETED"
       ) {
-        fetchAvailability();
+        fetchAvailability(false);
       }
     },
     [fetchAvailability]
