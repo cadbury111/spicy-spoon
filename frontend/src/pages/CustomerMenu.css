@@ -1455,3 +1455,62 @@
   font-weight: 600;
   cursor: pointer;
 }
+
+/* ================= MOBILE OPTIMIZATIONS ================= */
+@media (max-width: 768px) {
+  .menu-topbar {
+    padding: 10px 14px;
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+
+  .brand-block h1 {
+    font-size: 1.15rem;
+  }
+
+  .table-indicator-pill {
+    padding: 4px 10px;
+    font-size: 0.8rem;
+  }
+
+  .header-actions {
+    gap: 6px;
+  }
+
+  .view-bill-btn,
+  .cart-toggle-btn {
+    padding: 8px 12px;
+    font-size: 0.82rem;
+  }
+
+  .category-filter-section {
+    padding: 10px 14px;
+  }
+
+  .menu-grid-section {
+    padding: 12px;
+  }
+
+  .dish-cards-grid {
+    grid-template-columns: 1fr;
+    gap: 14px;
+  }
+
+  .dish-image-wrapper {
+    height: 170px;
+  }
+
+  .cart-drawer-content {
+    width: 100%;
+    max-width: 100%;
+    border-radius: 0;
+  }
+
+  .order-success-modal,
+  .instruction-modal-box {
+    margin: 12px;
+    width: calc(100% - 24px);
+    box-sizing: border-box;
+    padding: 20px 16px;
+  }
+}

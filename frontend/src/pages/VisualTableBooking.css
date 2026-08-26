@@ -959,7 +959,7 @@
   color: #ffffff;
 }
 
-/* Responsive adjustments */
+/* ================= COMPREHENSIVE MOBILE RESPONSIVENESS ================= */
 @media (max-width: 900px) {
   .booking-filters-bar {
     grid-template-columns: 1fr;
@@ -972,5 +972,162 @@
     gap: 12px;
     align-items: stretch;
     padding: 14px 18px;
+  }
+}
+
+@media (max-width: 768px) {
+  .booking-navbar {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    padding: 12px 16px;
+    gap: 8px;
+  }
+
+  .back-link {
+    font-size: 0.85rem;
+    order: 1;
+  }
+
+  .refresh-btn {
+    order: 2;
+    padding: 6px 12px;
+    font-size: 0.8rem;
+  }
+
+  .nav-center {
+    order: 3;
+    width: 100%;
+    text-align: center;
+    margin-top: 6px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+  }
+
+  .brand-badge {
+    font-size: 0.68rem;
+    padding: 3px 10px;
+    letter-spacing: 1px;
+    margin-bottom: 4px;
+  }
+
+  .nav-center h1 {
+    font-size: 1.15rem;
+    letter-spacing: 0.5px;
+    line-height: 1.25;
+  }
+
+  .booking-filters-bar {
+    margin: 12px;
+    padding: 14px;
+    gap: 12px;
+  }
+
+  .filter-item label {
+    font-size: 0.82rem;
+  }
+
+  .guests-counter {
+    display: flex;
+    overflow-x: auto;
+    padding-bottom: 6px;
+    gap: 6px;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  .guest-chip {
+    flex-shrink: 0;
+    padding: 6px 12px;
+    font-size: 0.8rem;
+  }
+
+  .table-booking-status-banner {
+    margin: 12px;
+  }
+
+  .status-banner-selected {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 14px;
+    padding: 14px;
+  }
+
+  .status-banner-selected .banner-left h3 {
+    font-size: 1rem;
+  }
+
+  .btn-primary-reserve {
+    width: 100%;
+    justify-content: center;
+    padding: 14px;
+    font-size: 0.88rem;
+    box-sizing: border-box;
+  }
+
+  .status-banner-instruction {
+    padding: 12px;
+  }
+
+  .floor-legend {
+    margin: 12px;
+    padding: 10px;
+    gap: 10px;
+    justify-content: center;
+    font-size: 0.75rem;
+  }
+
+  .sections-grid {
+    padding: 0 12px;
+    gap: 14px;
+  }
+
+  .section-card {
+    padding: 14px;
+  }
+
+  .tables-grid {
+    grid-template-columns: repeat(auto-fill, minmax(130px, 1fr));
+    gap: 10px;
+  }
+
+  .table-card {
+    padding: 12px 10px;
+  }
+
+  .floating-booking-drawer {
+    left: 10px;
+    right: 10px;
+    bottom: 10px;
+    padding: 12px 14px;
+    border-radius: 14px;
+  }
+
+  .drawer-btn-reserve {
+    width: 100%;
+    justify-content: center;
+    padding: 12px;
+  }
+
+  .modal-content-box,
+  .confirmation-ticket-box {
+    margin: 12px;
+    padding: 20px 16px;
+    max-height: 90vh;
+    overflow-y: auto;
+    width: calc(100% - 24px);
+    box-sizing: border-box;
+  }
+
+  .form-actions-row {
+    flex-direction: column-reverse;
+    gap: 10px;
+  }
+
+  .btn-cancel,
+  .btn-confirm-reserve {
+    width: 100%;
+    justify-content: center;
   }
 }

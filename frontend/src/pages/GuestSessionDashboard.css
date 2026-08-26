@@ -479,8 +479,19 @@
 @media (max-width: 850px) {
   .session-dual-grid {
     grid-template-columns: 1fr;
+    gap: 16px;
+    padding: 0 12px;
   }
   .session-cta-banner {
     grid-template-columns: 1fr;
+    gap: 10px;
+  }
+  .session-header {
+    padding: 14px 16px;
+    flex-wrap: wrap;
+    gap: 10px;
+  }
+  .session-card {
+    padding: 16px;
   }
 }

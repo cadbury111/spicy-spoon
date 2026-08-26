@@ -628,5 +628,28 @@
 @media (max-width: 850px) {
   .bill-checkout-layout {
     grid-template-columns: 1fr;
+    gap: 16px;
+    padding: 0 12px;
+  }
+
+  .bill-page-header {
+    padding: 14px 16px;
+    flex-wrap: wrap;
+    gap: 10px;
+  }
+
+  .bill-summary-card,
+  .payment-action-card,
+  .receipt-digital-card {
+    padding: 16px;
+  }
+
+  .pay-method-tabs {
+    gap: 6px;
+  }
+
+  .method-tab {
+    padding: 10px 6px;
+    font-size: 0.75rem;
   }
 }
