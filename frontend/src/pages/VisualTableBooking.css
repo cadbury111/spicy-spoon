@@ -377,7 +377,7 @@
 
 .sections-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(540px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
   gap: 24px;
 }
 
@@ -644,7 +644,8 @@
   align-items: center;
   justify-content: center;
   z-index: 100;
-  padding: 20px;
+  padding: 16px;
+  box-sizing: border-box;
 }
 
 .booking-modal-box {
@@ -656,6 +657,9 @@
   padding: 28px;
   box-shadow: 0 20px 50px rgba(0, 0, 0, 0.8);
   animation: popIn 0.25s ease-out;
+  box-sizing: border-box;
+  max-height: 90vh;
+  overflow-y: auto;
 }
 
 @keyframes popIn {
@@ -713,6 +717,8 @@
   display: grid;
   grid-template-columns: 1fr 1fr;
   gap: 16px;
+  width: 100%;
+  box-sizing: border-box;
 }
 
 .input-group {
@@ -720,6 +726,9 @@
   flex-direction: column;
   gap: 6px;
   margin-bottom: 16px;
+  width: 100%;
+  box-sizing: border-box;
+  min-width: 0;
 }
 
 .input-group label {
@@ -733,16 +742,21 @@
   background: #25160e;
   border: 1px solid rgba(255, 255, 255, 0.15);
   color: #ffffff;
-  padding: 10px 14px;
+  padding: 12px 14px;
   border-radius: 10px;
   font-size: 0.95rem;
   outline: none;
   font-family: inherit;
+  width: 100%;
+  box-sizing: border-box;
+  min-width: 0;
+  transition: border-color 0.2s ease, box-shadow 0.2s ease;
 }
 
 .input-group input:focus,
 .input-group textarea:focus {
   border-color: #ff5722;
+  box-shadow: 0 0 0 2px rgba(255, 87, 34, 0.2);
 }
 
 .booking-summary-box {
@@ -1108,6 +1122,45 @@
     width: 100%;
     justify-content: center;
     padding: 12px;
+  }
+
+  .booking-modal-box {
+    padding: 20px 16px;
+    border-radius: 16px;
+    width: 100%;
+    max-height: 92vh;
+    box-sizing: border-box;
+  }
+
+  .form-grid-dual {
+    grid-template-columns: 1fr;
+    gap: 0;
+  }
+
+  .modal-actions {
+    flex-direction: column-reverse;
+    gap: 10px;
+    width: 100%;
+  }
+
+  .modal-actions .btn-secondary,
+  .modal-actions .btn-primary {
+    width: 100%;
+    justify-content: center;
+    box-sizing: border-box;
+    padding: 14px;
+  }
+
+  .confirmation-modal-card {
+    padding: 24px 16px;
+    border-radius: 18px;
+    width: 100%;
+    box-sizing: border-box;
+  }
+
+  .ticket-details-grid {
+    grid-template-columns: 1fr;
+    gap: 10px;
   }
 
   .modal-content-box,

@@ -63,6 +63,17 @@ function setLocalDemoData(key, data) {
   } catch (e) {}
 }
 
+function buildQueryString(params = {}) {
+  const cleanParams = {};
+  for (const [key, value] of Object.entries(params)) {
+    if (value !== undefined && value !== null && value !== "" && value !== "undefined" && value !== "null") {
+      cleanParams[key] = value;
+    }
+  }
+  const query = new URLSearchParams(cleanParams).toString();
+  return query ? `?${query}` : "";
+}
+
 async function request(endpoint, options = {}) {
   const url = `${API_BASE_URL}${endpoint}`;
   const token = localStorage.getItem("spicy_staff_token");
@@ -85,28 +96,37 @@ async function request(endpoint, options = {}) {
     config.body = JSON.stringify(config.body);
   }
 
+  let response;
   try {
-    const response = await fetch(url, config);
-
-    if (response.status === 401 && endpoint.startsWith("/auth/me")) {
-      localStorage.removeItem("spicy_staff_token");
-      localStorage.removeItem("spicy_staff_user");
+    response = await fetch(url, config);
+  } catch (netErr) {
+    console.warn(`Network fetch unreachable for ${endpoint}:`, netErr.message);
+    const method = config.method || "GET";
+    // Only allow fallback for GET requests when server is genuinely unreachable (offline)
+    if (method === "GET") {
+      return handleClientFallback(endpoint, options, netErr);
     }
-
-    const data = await response.json().catch(() => ({}));
-
-    if (!response.ok) {
-      const error = new Error(data.message || `Request failed with status ${response.status}`);
-      error.status = response.status;
-      error.data = data;
-      throw error;
-    }
-
-    return data;
-  } catch (err) {
-    // If backend is unreachable (e.g. deployed on Vercel or offline), run graceful client fallback
-    return handleClientFallback(endpoint, options, err);
+    // For mutations (POST, PUT, DELETE), NEVER pretend fake success if server is unreachable
+    throw new Error(
+      "Unable to connect to Spicy Spoon server. Please ensure the backend is running at " + API_BASE_URL
+    );
   }
+
+  if (response.status === 401 && endpoint.startsWith("/auth/me")) {
+    localStorage.removeItem("spicy_staff_token");
+    localStorage.removeItem("spicy_staff_user");
+  }
+
+  const data = await response.json().catch(() => ({}));
+
+  if (!response.ok) {
+    const error = new Error(data.message || `Request failed with status ${response.status}`);
+    error.status = response.status;
+    error.data = data;
+    throw error;
+  }
+
+  return data;
 }
 
 // Client-side fallback handler for seamless demo experience on mobile & cloud
@@ -362,18 +382,15 @@ export const api = {
   getRestaurant: (slug = "spicy-spoon") => request(`/restaurants/${slug}`),
   getRestaurantQr: (slug = "spicy-spoon") => request(`/restaurants/${slug}/qr`),
   getRestaurantTables: (slug = "spicy-spoon", params = {}) => {
-    const query = new URLSearchParams(params).toString();
-    return request(`/restaurants/${slug}/tables${query ? `?${query}` : ""}`);
+    return request(`/restaurants/${slug}/tables${buildQueryString(params)}`);
   },
   getRestaurantTablesWithAvailability: (slug = "spicy-spoon", params = {}) => {
-    const query = new URLSearchParams(params).toString();
-    return request(`/restaurants/${slug}/tables${query ? `?${query}` : ""}`);
+    return request(`/restaurants/${slug}/tables${buildQueryString(params)}`);
   },
 
   // Tables
   getTables: (params = {}) => {
-    const query = new URLSearchParams(params).toString();
-    return request(`/tables${query ? `?${query}` : ""}`);
+    return request(`/tables${buildQueryString(params)}`);
   },
   getTable: (id) => request(`/tables/${id}`),
   updateTableStatus: (id, data) => request(`/tables/${id}/status`, { method: "PUT", body: data }),
@@ -381,16 +398,14 @@ export const api = {
 
   // Bookings (Guest Table Reservation)
   getBookings: (params = {}) => {
-    const query = new URLSearchParams(params).toString();
-    return request(`/bookings${query ? `?${query}` : ""}`);
+    return request(`/bookings${buildQueryString(params)}`);
   },
   createBooking: (data) => request("/bookings", { method: "POST", body: data }),
   updateBookingStatus: (id, status) => request(`/bookings/${id}/status`, { method: "PUT", body: { status } }),
 
   // Menu
   getMenu: (params = {}) => {
-    const query = new URLSearchParams(params).toString();
-    return request(`/menu${query ? `?${query}` : ""}`);
+    return request(`/menu${buildQueryString(params)}`);
   },
   getMenuItem: (id) => request(`/menu/${id}`),
   addMenuItem: (data) => request("/menu", { method: "POST", body: data }),
@@ -398,8 +413,7 @@ export const api = {
 
   // Orders (Multi-Round Dining)
   getOrders: (params = {}) => {
-    const query = new URLSearchParams(params).toString();
-    return request(`/orders${query ? `?${query}` : ""}`);
+    return request(`/orders${buildQueryString(params)}`);
   },
   createOrder: (data) => request("/orders", { method: "POST", body: data }),
   updateOrderStatus: (id, status) => request(`/orders/${id}/status`, { method: "PUT", body: { status } }),
@@ -407,13 +421,11 @@ export const api = {
 
   // Bills & Live Billing
   getLiveBill: (params = {}) => {
-    const query = new URLSearchParams(params).toString();
-    return request(`/bills/live${query ? `?${query}` : ""}`);
+    return request(`/bills/live${buildQueryString(params)}`);
   },
   generateBill: (data) => request("/bills/generate", { method: "POST", body: data }),
   getBills: (params = {}) => {
-    const query = new URLSearchParams(params).toString();
-    return request(`/bills${query ? `?${query}` : ""}`);
+    return request(`/bills${buildQueryString(params)}`);
   },
   getBill: (id) => request(`/bills/${id}`),
 

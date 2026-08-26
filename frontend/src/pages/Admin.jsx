@@ -132,6 +132,10 @@ function Admin({ onLogout }) {
 
   useEffect(() => {
     fetchAllData();
+    const timer = setInterval(() => {
+      fetchAllData();
+    }, 10000);
+    return () => clearInterval(timer);
   }, [fetchAllData]);
 
   // WebSocket Live Sync

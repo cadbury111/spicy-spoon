@@ -40,22 +40,22 @@ router.get("/", (req, res) => {
         t.capacity as table_capacity,
         t.section as table_section
       FROM bookings b
-      JOIN restaurant_tables t ON b.table_id = t.id
+      LEFT JOIN restaurant_tables t ON b.table_id = t.id
       WHERE 1=1
     `;
     const params = [];
 
-    if (date) {
+    if (date && date !== "undefined" && date !== "null") {
       queryStr += " AND b.booking_date = ?";
       params.push(date);
     }
-    if (status) {
+    if (status && status !== "undefined" && status !== "null") {
       queryStr += " AND b.status = ?";
       params.push(status);
     }
-    if (table_id) {
+    if (table_id && table_id !== "undefined" && table_id !== "null" && !isNaN(Number(table_id))) {
       queryStr += " AND b.table_id = ?";
-      params.push(table_id);
+      params.push(Number(table_id));
     }
 
     queryStr += " ORDER BY b.booking_date DESC, b.start_time ASC, b.id DESC";

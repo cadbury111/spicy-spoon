@@ -108,10 +108,10 @@ function CustomerMenu() {
     try {
       const orders = await api.getOrders({
         session_id: activeSessionId || undefined,
-        table_id: undefined,
+        table_number: tableNumber,
       });
 
-      const currentTableOrders = orders.filter(
+      const currentTableOrders = (orders || []).filter(
         (o) =>
           (o.tableNumber === tableNumber || o.table_number === tableNumber) &&
           !["COMPLETED", "CANCELLED"].includes(o.status)

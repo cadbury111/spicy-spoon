@@ -21,7 +21,7 @@ router.get("/", (req, res) => {
         p.paid_at,
         p.status as payment_status
       FROM bills b
-      JOIN restaurant_tables t ON b.table_id = t.id
+      LEFT JOIN restaurant_tables t ON b.table_id = t.id
       LEFT JOIN payments p ON b.id = p.bill_id AND p.status IN ('SUCCESS', 'CASH_PAID')
       ORDER BY b.id DESC
     `).all();

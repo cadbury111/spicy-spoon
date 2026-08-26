@@ -17,32 +17,37 @@ function generateSessionId(tableNumber) {
 // Get all orders with items
 router.get("/", (req, res) => {
   try {
-    const { session_id, table_id, status } = req.query;
+    const { session_id, table_id, table_number, status } = req.query;
 
     let queryStr = `
       SELECT 
         o.*,
-        t.table_number,
+        COALESCE(o.table_number, t.table_number) as resolved_table_number,
         t.section as table_section,
         b.bill_number,
         b.status as bill_status,
         b.grand_total as bill_grand_total
       FROM orders o
-      JOIN restaurant_tables t ON o.table_id = t.id
+      LEFT JOIN restaurant_tables t ON o.table_id = t.id
       LEFT JOIN bills b ON o.session_id = b.session_id OR o.id = b.order_id
       WHERE 1=1
     `;
     const params = [];
 
-    if (session_id) {
+    if (session_id && session_id !== "undefined" && session_id !== "null") {
       queryStr += " AND o.session_id = ?";
       params.push(session_id);
     }
-    if (table_id) {
+    if (table_id && table_id !== "undefined" && table_id !== "null" && !isNaN(Number(table_id))) {
       queryStr += " AND o.table_id = ?";
       params.push(Number(table_id));
     }
-    if (status) {
+    if (table_number && table_number !== "undefined" && table_number !== "null") {
+      const cleanNum = String(table_number).replace(/^Table\s*/i, "").trim();
+      queryStr += " AND (o.table_number = ? OR o.table_number = ? OR t.table_number = ? OR t.table_number = ?)";
+      params.push(cleanNum, `T${cleanNum.replace(/^T/i, "")}`, cleanNum, `T${cleanNum.replace(/^T/i, "")}`);
+    }
+    if (status && status !== "undefined" && status !== "null") {
       queryStr += " AND o.status = ?";
       params.push(status);
     }
@@ -54,10 +59,12 @@ router.get("/", (req, res) => {
 
     const ordersWithItems = orders.map((order) => {
       const items = itemsQuery.all(order.id);
+      const tblNum = order.table_number || order.resolved_table_number || "T1";
       return {
         ...order,
+        table_number: tblNum,
+        tableNumber: tblNum,
         items,
-        tableNumber: order.table_number,
       };
     });
 
@@ -154,10 +161,13 @@ router.post("/", (req, res) => {
       let menuItem;
 
       if (rawItem.id || rawItem.menu_item_id) {
-        menuItem = db.prepare("SELECT * FROM menu_items WHERE id = ?").get(rawItem.id || rawItem.menu_item_id);
+        menuItem = db.prepare("SELECT * FROM menu_items WHERE id = ?").get(Number(rawItem.id || rawItem.menu_item_id) || 0);
       }
       if (!menuItem && rawItem.name) {
-        menuItem = db.prepare("SELECT * FROM menu_items WHERE name = ? COLLATE NOCASE").get(rawItem.name);
+        menuItem = db.prepare("SELECT * FROM menu_items WHERE name = ? COLLATE NOCASE").get(rawItem.name.trim());
+      }
+      if (!menuItem && rawItem.name) {
+        menuItem = db.prepare("SELECT * FROM menu_items WHERE name LIKE ?").get(`%${rawItem.name.trim()}%`);
       }
 
       if (!menuItem) {
