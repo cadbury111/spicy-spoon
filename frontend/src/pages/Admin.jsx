@@ -861,21 +861,21 @@ function Admin({ onLogout }) {
                   </tr>
                 </thead>
                 <tbody>
-                  {staffList.map((st) => (
-                    <tr key={st.id}>
+                  {staffList.map((st, idx) => (
+                    <tr key={st.id ? `staff-${st.id}-${st.username}` : `staff-${idx}`}>
                       <td>
                         <strong>{st.name}</strong>
                       </td>
                       <td>{st.username}</td>
                       <td>
-                        <span className={`role-badge ${st.role.toLowerCase()}`}>{st.role}</span>
+                        <span className={`role-badge ${st.role?.toLowerCase()}`}>{st.role}</span>
                       </td>
                       <td>
                         <span className={`status-pill ${st.status === "ACTIVE" ? "green" : "red"}`}>
                           {st.status}
                         </span>
                       </td>
-                      <td>{new Date(st.created_at).toLocaleDateString()}</td>
+                      <td>{st.created_at ? new Date(st.created_at).toLocaleDateString() : "Active"}</td>
                       <td>
                         {st.id !== currentUser.id && (
                           <button
@@ -910,6 +910,10 @@ function Admin({ onLogout }) {
                   <input type="text" value="spicy-spoon" readOnly />
                 </div>
                 <div className="field-group">
+                  <label>Cuisine Specialization</label>
+                  <input type="text" value="Contemporary Indian & Tandoori" readOnly />
+                </div>
+                <div className="field-group">
                   <label>GST Tax Rate (%)</label>
                   <input type="text" value="5.0%" readOnly />
                 </div>
@@ -927,7 +931,7 @@ function Admin({ onLogout }) {
                 </div>
                 <div className="field-group">
                   <label>Payment Gateway Mode</label>
-                  <input type="text" value={process.env.PAYMENT_MODE || "DEV_SANDBOX"} readOnly />
+                  <input type="text" value="DEV_SANDBOX (Live UPI Simulation)" readOnly />
                 </div>
               </div>
             </div>

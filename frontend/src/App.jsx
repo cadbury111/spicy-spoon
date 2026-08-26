@@ -200,9 +200,6 @@ function App() {
 
         {/* Desktop Actions */}
         <div className="nav-actions-group">
-          <button className="nav-reserve-btn" onClick={goToTables}>
-            BOOK A TABLE
-          </button>
           <button className="nav-order" onClick={() => goToOrder("T1")}>
             ORDER NOW
           </button>
@@ -229,16 +226,7 @@ function App() {
           <a href="#contact" onClick={() => setMenuOpen(false)}>
             CONTACT
           </a>
-          <button
-            className="mobile-reserve-btn"
-            onClick={() => {
-              setMenuOpen(false);
-              goToTables();
-            }}
-          >
-            BOOK A TABLE
-          </button>
-          <button className="mobile-order" onClick={() => goToOrder("T1")}>
+          <button className="mobile-order" onClick={() => { setMenuOpen(false); goToOrder("T1"); }}>
             ORDER NOW
           </button>
         </div>
