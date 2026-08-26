@@ -931,28 +931,80 @@ function Admin({ onLogout }) {
         {activeTab === "settings" && (
           <div className="tab-content settings-tab">
             <div className="settings-card">
-              <h3>Restaurant Profile & System Parameters</h3>
+              <div className="settings-head-row">
+                <div>
+                  <h3>Restaurant Profile & System Controls</h3>
+                  <p>Configure tax rates, service charges, contact info and operational parameters.</p>
+                </div>
+                <button
+                  type="button"
+                  className="btn-save-settings"
+                  onClick={async () => {
+                    try {
+                      await api.updateSettings({
+                        name: restaurantSettings?.name || "Spicy Spoon",
+                        tax_rate: parseFloat(restaurantSettings?.tax_rate || 5.0),
+                        service_charge_rate: parseFloat(restaurantSettings?.service_charge_rate || 2.5),
+                        phone: restaurantSettings?.phone || "+91 73958 77142",
+                        address: restaurantSettings?.address || "Tiruppur-Palladam road, Tamil Nadu",
+                      });
+                      alert("Restaurant parameters saved successfully!");
+                      fetchAllData();
+                    } catch (err) {
+                      alert("Failed to save settings: " + err.message);
+                    }
+                  }}
+                >
+                  Save System Parameters
+                </button>
+              </div>
 
               <div className="settings-fields-grid">
                 <div className="field-group">
-                  <label>Restaurant Name</label>
-                  <input type="text" value="Spicy Spoon" readOnly />
+                  <label>Restaurant Brand Name</label>
+                  <input
+                    type="text"
+                    value={restaurantSettings?.name || "Spicy Spoon"}
+                    onChange={(e) => setRestaurantSettings({ ...restaurantSettings, name: e.target.value })}
+                  />
                 </div>
                 <div className="field-group">
                   <label>Slug Identifier</label>
                   <input type="text" value="spicy-spoon" readOnly />
                 </div>
                 <div className="field-group">
-                  <label>Cuisine Specialization</label>
-                  <input type="text" value="Contemporary Indian & Tandoori" readOnly />
+                  <label>Official Phone Number</label>
+                  <input
+                    type="text"
+                    value={restaurantSettings?.phone || "+91 73958 77142"}
+                    onChange={(e) => setRestaurantSettings({ ...restaurantSettings, phone: e.target.value })}
+                  />
+                </div>
+                <div className="field-group">
+                  <label>Physical Address</label>
+                  <input
+                    type="text"
+                    value={restaurantSettings?.address || "Tiruppur-Palladam road, Tamil Nadu"}
+                    onChange={(e) => setRestaurantSettings({ ...restaurantSettings, address: e.target.value })}
+                  />
                 </div>
                 <div className="field-group">
                   <label>GST Tax Rate (%)</label>
-                  <input type="text" value="5.0%" readOnly />
+                  <input
+                    type="number"
+                    step="0.1"
+                    value={restaurantSettings?.tax_rate !== undefined ? restaurantSettings.tax_rate : 5.0}
+                    onChange={(e) => setRestaurantSettings({ ...restaurantSettings, tax_rate: parseFloat(e.target.value) || 0 })}
+                  />
                 </div>
                 <div className="field-group">
                   <label>Service Charge Rate (%)</label>
-                  <input type="text" value="2.5%" readOnly />
+                  <input
+                    type="number"
+                    step="0.1"
+                    value={restaurantSettings?.service_charge_rate !== undefined ? restaurantSettings.service_charge_rate : 2.5}
+                    onChange={(e) => setRestaurantSettings({ ...restaurantSettings, service_charge_rate: parseFloat(e.target.value) || 0 })}
+                  />
                 </div>
                 <div className="field-group">
                   <label>Booking Duration (Minutes)</label>
@@ -961,10 +1013,6 @@ function Admin({ onLogout }) {
                 <div className="field-group">
                   <label>UPI Merchant VPA</label>
                   <input type="text" value="spicyspoon@upi" readOnly />
-                </div>
-                <div className="field-group">
-                  <label>Payment Gateway Mode</label>
-                  <input type="text" value="DEV_SANDBOX (Live UPI Simulation)" readOnly />
                 </div>
               </div>
             </div>
@@ -978,8 +1026,8 @@ function Admin({ onLogout }) {
           <div className="table-modal-box" onClick={(e) => e.stopPropagation()}>
             <div className="tbl-modal-head">
               <div>
-                <span className="tbl-modal-sec">{selectedTable.section}</span>
-                <h2>Table {selectedTable.table_number} Details</h2>
+                <span className="tbl-modal-sec">{selectedTable.section} · 👥 {selectedTable.capacity} Seats</span>
+                <h2>Table {selectedTable.table_number} Management</h2>
               </div>
               <button className="close-btn" onClick={() => setSelectedTable(null)}>
                 ✕
@@ -992,10 +1040,57 @@ function Admin({ onLogout }) {
                 <strong className={`status-pill ${selectedTable.status.toLowerCase()}`}>{selectedTable.status}</strong>
               </div>
 
+              {/* Instant Status Override Bar */}
+              <div className="status-override-bar">
+                <label>Manual Status Override:</label>
+                <div className="override-btns-grid">
+                  <button
+                    className={`btn-override ${selectedTable.status === "AVAILABLE" ? "active green" : ""}`}
+                    onClick={async () => {
+                      await api.updateTableStatus(selectedTable.id, { status: "AVAILABLE" });
+                      setSelectedTable({ ...selectedTable, status: "AVAILABLE" });
+                      fetchAllData();
+                    }}
+                  >
+                    🟢 Available
+                  </button>
+                  <button
+                    className={`btn-override ${selectedTable.status === "RESERVED" ? "active yellow" : ""}`}
+                    onClick={async () => {
+                      await api.updateTableStatus(selectedTable.id, { status: "RESERVED" });
+                      setSelectedTable({ ...selectedTable, status: "RESERVED" });
+                      fetchAllData();
+                    }}
+                  >
+                    🟡 Reserved
+                  </button>
+                  <button
+                    className={`btn-override ${selectedTable.status === "OCCUPIED" ? "active red" : ""}`}
+                    onClick={async () => {
+                      await api.updateTableStatus(selectedTable.id, { status: "OCCUPIED" });
+                      setSelectedTable({ ...selectedTable, status: "OCCUPIED" });
+                      fetchAllData();
+                    }}
+                  >
+                    🔴 Occupied
+                  </button>
+                  <button
+                    className={`btn-override ${selectedTable.status === "PAYMENT_PENDING" ? "active orange" : ""}`}
+                    onClick={async () => {
+                      await api.updateTableStatus(selectedTable.id, { status: "PAYMENT_PENDING" });
+                      setSelectedTable({ ...selectedTable, status: "PAYMENT_PENDING" });
+                      fetchAllData();
+                    }}
+                  >
+                    💳 Payment Pending
+                  </button>
+                </div>
+              </div>
+
               {selectedTable.booking_customer && (
                 <div className="tbl-info-block">
                   <h4>Active Reservation</h4>
-                  <p>Customer: {selectedTable.booking_customer}</p>
+                  <p>Customer: <strong>{selectedTable.booking_customer}</strong></p>
                   <p>Booking ID: #{selectedTable.booking_number}</p>
                 </div>
               )}
@@ -1003,9 +1098,9 @@ function Admin({ onLogout }) {
               {tableDetailsBill && (
                 <div className="tbl-info-block bill-block">
                   <h4>Outstanding Live Bill</h4>
-                  <p>Invoice: #{tableDetailsBill.bill_number}</p>
-                  <p>Grand Total: ₹{Number(tableDetailsBill.grand_total).toFixed(2)}</p>
-                  <p>Status: {tableDetailsBill.status}</p>
+                  <p>Invoice: <strong>#{tableDetailsBill.bill_number}</strong></p>
+                  <p>Grand Total: <strong>₹{Number(tableDetailsBill.grand_total).toFixed(2)}</strong></p>
+                  <p>Status: <span className={`status-pill ${tableDetailsBill.status.toLowerCase()}`}>{tableDetailsBill.status}</span></p>
                 </div>
               )}
 
@@ -1018,8 +1113,20 @@ function Admin({ onLogout }) {
                     <Banknote size={16} /> Collect Cash & Settle
                   </button>
                 )}
+
+                <button
+                  className="btn-modal-view-qr"
+                  onClick={() => {
+                    handleLoadTableQr(selectedTable.id);
+                    setActiveTab("qr");
+                    setSelectedTable(null);
+                  }}
+                >
+                  <QrCode size={16} /> View Table QR Stand
+                </button>
+
                 <button className="btn-release-table" onClick={() => handleReleaseTable(selectedTable.id)}>
-                  Release / Close Table
+                  Release to AVAILABLE
                 </button>
               </div>
             </div>

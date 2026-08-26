@@ -1070,6 +1070,127 @@
   cursor: pointer;
 }
 
+.settings-head-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 12px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  padding-bottom: 16px;
+  margin-bottom: 16px;
+}
+
+.settings-head-row h3 {
+  margin: 0 0 4px 0;
+  color: #ffffff;
+}
+
+.settings-head-row p {
+  margin: 0;
+  font-size: 0.8rem;
+  color: #a89487;
+}
+
+.btn-save-settings {
+  background: linear-gradient(135deg, #ff4500, #ff8c00);
+  color: #ffffff;
+  border: none;
+  padding: 10px 18px;
+  border-radius: 8px;
+  font-size: 0.85rem;
+  font-weight: 700;
+  cursor: pointer;
+  box-shadow: 0 4px 12px rgba(255, 69, 0, 0.35);
+  transition: all 0.2s ease;
+}
+
+.btn-save-settings:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 6px 16px rgba(255, 69, 0, 0.5);
+}
+
+.status-override-bar {
+  background: #20120b;
+  border-radius: 10px;
+  padding: 12px;
+  margin-top: 12px;
+}
+
+.status-override-bar label {
+  font-size: 0.78rem;
+  font-weight: 700;
+  color: #ff9d76;
+  display: block;
+  margin-bottom: 8px;
+}
+
+.override-btns-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 6px;
+}
+
+.btn-override {
+  background: #140c08;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  color: #d1c7bd;
+  padding: 8px 6px;
+  border-radius: 6px;
+  font-size: 0.76rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.btn-override:hover {
+  background: rgba(255, 255, 255, 0.1);
+  color: #ffffff;
+}
+
+.btn-override.active.green {
+  background: rgba(16, 185, 129, 0.2);
+  border-color: #10b981;
+  color: #6ee7b7;
+}
+
+.btn-override.active.yellow {
+  background: rgba(245, 158, 11, 0.2);
+  border-color: #f59e0b;
+  color: #fcd34d;
+}
+
+.btn-override.active.red {
+  background: rgba(239, 68, 68, 0.2);
+  border-color: #ef4444;
+  color: #fca5a5;
+}
+
+.btn-override.active.orange {
+  background: rgba(249, 115, 22, 0.2);
+  border-color: #f97316;
+  color: #fdba74;
+}
+
+.btn-modal-view-qr {
+  background: #25160e;
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  color: #ffffff;
+  padding: 10px 12px;
+  border-radius: 8px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.82rem;
+  font-weight: 600;
+}
+
+.btn-modal-view-qr:hover {
+  background: rgba(255, 87, 34, 0.2);
+  border-color: #ff5722;
+}
+
 .field-dual {
   display: grid;
   grid-template-columns: 1fr 1fr;

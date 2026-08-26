@@ -106,6 +106,27 @@
   color: #ffffff;
 }
 
+.kds-btn-spawn {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.45rem 0.9rem;
+  border-radius: 8px;
+  background: linear-gradient(135deg, #ff4500, #ff8c00);
+  border: none;
+  color: #ffffff;
+  font-size: 0.82rem;
+  font-weight: 700;
+  cursor: pointer;
+  box-shadow: 0 4px 12px rgba(255, 69, 0, 0.35);
+  transition: all 0.2s ease;
+}
+
+.kds-btn-spawn:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 6px 16px rgba(255, 69, 0, 0.5);
+}
+
 .kds-profile-badge {
   display: flex;
   align-items: center;

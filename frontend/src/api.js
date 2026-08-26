@@ -1,3 +1,4 @@
+import QRCode from "qrcode";
 import { menuItems as fallbackMenu } from "./data/menuData";
 
 // Resolve API base URL dynamically
@@ -32,21 +33,157 @@ export function getWsUrl() {
   return `${protocol}//${hostname}:5000`;
 }
 
-// 12 Standard Tables Dataset for Fallback
+// 12 Standard Tables Dataset
 const DEFAULT_TABLES = [
-  { id: 1, table_number: "T1", capacity: 2, section: "Main Hall", status: "AVAILABLE" },
+  { id: 1, table_number: "T1", capacity: 2, section: "Main Hall", status: "OCCUPIED" },
   { id: 2, table_number: "T2", capacity: 2, section: "Main Hall", status: "AVAILABLE" },
-  { id: 3, table_number: "T3", capacity: 4, section: "Main Hall", status: "AVAILABLE" },
+  { id: 3, table_number: "T3", capacity: 4, section: "Main Hall", status: "ORDER_PLACED" },
   { id: 4, table_number: "T4", capacity: 4, section: "Main Hall", status: "AVAILABLE" },
-  { id: 5, table_number: "T5", capacity: 2, section: "Window Side", status: "AVAILABLE" },
+  { id: 5, table_number: "T5", capacity: 2, section: "Window Side", status: "ORDER_PLACED" },
   { id: 6, table_number: "T6", capacity: 4, section: "Window Side", status: "AVAILABLE" },
-  { id: 7, table_number: "T7", capacity: 6, section: "Window Side", status: "AVAILABLE" },
+  { id: 7, table_number: "T7", capacity: 6, section: "Window Side", status: "PAYMENT_PENDING" },
   { id: 8, table_number: "T8", capacity: 4, section: "Outdoor Patio", status: "AVAILABLE" },
-  { id: 9, table_number: "T9", capacity: 6, section: "Outdoor Patio", status: "AVAILABLE" },
+  { id: 9, table_number: "T9", capacity: 6, section: "Outdoor Patio", status: "RESERVED" },
   { id: 10, table_number: "T10", capacity: 8, section: "Outdoor Patio", status: "AVAILABLE" },
-  { id: 11, table_number: "T11", capacity: 6, section: "VIP Lounge", status: "AVAILABLE" },
+  { id: 11, table_number: "T11", capacity: 6, section: "VIP Lounge", status: "RESERVED" },
   { id: 12, table_number: "T12", capacity: 10, section: "VIP Lounge", status: "AVAILABLE" },
 ];
+
+const INITIAL_DEMO_ORDERS = [
+  {
+    id: 101,
+    order_number: "ORD-8421",
+    session_id: "SESSION-T3-8421",
+    table_number: "T3",
+    tableNumber: "T3",
+    round_number: 1,
+    customer_name: "Anita & Family",
+    status: "ORDER_PLACED",
+    subtotal: 1047,
+    tax: 52.35,
+    service_charge: 26.18,
+    discount: 0,
+    total: 1125.53,
+    items: [
+      { id: 1, menu_item_id: 1, name: "Tandoori Chicken (Full)", unit_price: 649, quantity: 1, total_price: 649, special_instruction: "Extra spicy with mint chutney" },
+      { id: 2, menu_item_id: 2, name: "Butter Chicken", unit_price: 398, quantity: 1, total_price: 398, special_instruction: "Less sweet, rich gravy" }
+    ],
+    created_at: new Date(Date.now() - 3 * 60000).toISOString()
+  },
+  {
+    id: 102,
+    order_number: "ORD-9134",
+    session_id: "SESSION-T5-9134",
+    table_number: "T5",
+    tableNumber: "T5",
+    round_number: 1,
+    customer_name: "Rahul Sharma",
+    status: "ACCEPTED",
+    subtotal: 678,
+    tax: 33.9,
+    service_charge: 16.95,
+    discount: 0,
+    total: 728.85,
+    items: [
+      { id: 3, menu_item_id: 3, name: "Chicken Biryani", unit_price: 349, quantity: 1, total_price: 349, special_instruction: "Double salan on the side" },
+      { id: 5, menu_item_id: 5, name: "Paneer Tikka", unit_price: 329, quantity: 1, total_price: 329, special_instruction: "Well roasted" }
+    ],
+    created_at: new Date(Date.now() - 8 * 60000).toISOString()
+  },
+  {
+    id: 103,
+    order_number: "ORD-7622",
+    session_id: "SESSION-T1-7622",
+    table_number: "T1",
+    tableNumber: "T1",
+    round_number: 1,
+    customer_name: "Vikram Mehta",
+    status: "PREPARING",
+    subtotal: 828,
+    tax: 41.4,
+    service_charge: 20.7,
+    discount: 0,
+    total: 890.1,
+    items: [
+      { id: 7, menu_item_id: 7, name: "Grilled Fish", unit_price: 499, quantity: 1, total_price: 499, special_instruction: "Crispy skin, lemon butter sauce" },
+      { id: 8, menu_item_id: 8, name: "Chicken Hakka Noodles", unit_price: 329, quantity: 1, total_price: 329, special_instruction: "Add fried garlic" }
+    ],
+    created_at: new Date(Date.now() - 14 * 60000).toISOString()
+  },
+  {
+    id: 104,
+    order_number: "ORD-6190",
+    session_id: "SESSION-T7-6190",
+    table_number: "T7",
+    tableNumber: "T7",
+    round_number: 2,
+    customer_name: "Pooja Hegde",
+    status: "READY",
+    subtotal: 718,
+    tax: 35.9,
+    service_charge: 17.95,
+    discount: 0,
+    total: 771.85,
+    items: [
+      { id: 4, menu_item_id: 4, name: "Prawn Fry", unit_price: 519, quantity: 1, total_price: 519, special_instruction: "Garnish with curry leaves" },
+      { id: 6, menu_item_id: 6, name: "Gulab Jamun (2 Pcs)", unit_price: 199, quantity: 1, total_price: 199, special_instruction: "Serve piping hot" }
+    ],
+    created_at: new Date(Date.now() - 20 * 60000).toISOString()
+  }
+];
+
+const INITIAL_DEMO_BOOKINGS = [
+  {
+    id: 201,
+    booking_number: "BK-829104",
+    table_id: 11,
+    table_number: "T11",
+    section: "VIP Lounge",
+    booking_date: new Date().toISOString().split("T")[0],
+    start_time: "08:00 PM",
+    end_time: "09:30 PM",
+    guest_count: 6,
+    customer_name: "Siddharth Roy",
+    customer_phone: "+91 98450 11223",
+    customer_email: "siddharth@example.com",
+    status: "CONFIRMED",
+    special_notes: "Corporate celebration, quiet booth",
+    created_at: new Date().toISOString()
+  },
+  {
+    id: 202,
+    booking_number: "BK-471092",
+    table_id: 9,
+    table_number: "T9",
+    section: "Outdoor Patio",
+    booking_date: new Date().toISOString().split("T")[0],
+    start_time: "07:30 PM",
+    end_time: "09:00 PM",
+    guest_count: 4,
+    customer_name: "Meera Nair",
+    customer_phone: "+91 97412 88990",
+    customer_email: "meera.nair@example.com",
+    status: "CHECKED_IN",
+    special_notes: "Birthday anniversary decoration requested",
+    created_at: new Date().toISOString()
+  }
+];
+
+// Helper to generate genuine scannable QR Code Data URLs
+async function generateQrDataUrl(text) {
+  try {
+    return await QRCode.toDataURL(text, {
+      width: 450,
+      margin: 2,
+      color: {
+        dark: "#140c08",
+        light: "#ffffff",
+      },
+    });
+  } catch (err) {
+    return `data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='300' height='300'><rect width='300' height='300' fill='white'/></svg>`;
+  }
+}
 
 // Unified Local Storage Helpers for Standalone / Vercel Hosted Mode
 function getLocalDemoData(key, fallback = []) {
@@ -135,7 +272,7 @@ async function request(endpoint, options = {}) {
 }
 
 // Complete Client-side Engine for Seamless Hosted & Offline Execution
-function handleClientFallback(endpoint, options = {}, originalError) {
+async function handleClientFallback(endpoint, options = {}, originalError) {
   const method = (options.method || "GET").toUpperCase();
   const body = typeof options.body === "string" ? JSON.parse(options.body) : options.body || {};
 
@@ -154,7 +291,7 @@ function handleClientFallback(endpoint, options = {}, originalError) {
       const date = urlObj.searchParams.get("date") || new Date().toISOString().split("T")[0];
       const time = urlObj.searchParams.get("time") || "07:30 PM";
 
-      const savedBookings = getLocalDemoData("spicy_demo_bookings", []);
+      const savedBookings = getLocalDemoData("spicy_demo_bookings", INITIAL_DEMO_BOOKINGS);
 
       return tables.map((t) => {
         const fitsCapacity = t.capacity >= guests;
@@ -182,8 +319,8 @@ function handleClientFallback(endpoint, options = {}, originalError) {
       });
     }
 
-    if (method === "PUT" && endpoint.includes("/status")) {
-      const match = endpoint.match(/\/tables\/(\d+)\/status/);
+    if (method === "PUT" && (endpoint.includes("/status") || endpoint.match(/\/tables\/\d+/))) {
+      const match = endpoint.match(/\/tables\/(\d+)/);
       const tableId = match ? parseInt(match[1], 10) : 1;
       const nextStatus = body.status || "AVAILABLE";
 
@@ -198,7 +335,7 @@ function handleClientFallback(endpoint, options = {}, originalError) {
 
   // 2. BOOKINGS
   if (endpoint.startsWith("/bookings")) {
-    let bookings = getLocalDemoData("spicy_demo_bookings", []);
+    let bookings = getLocalDemoData("spicy_demo_bookings", INITIAL_DEMO_BOOKINGS);
 
     if (method === "GET") {
       return bookings;
@@ -263,7 +400,7 @@ function handleClientFallback(endpoint, options = {}, originalError) {
 
   // 3. ORDERS (Unified between Customer, Kitchen KDS, and Admin)
   if (endpoint.startsWith("/orders")) {
-    let orders = getLocalDemoData("spicy_demo_orders", []);
+    let orders = getLocalDemoData("spicy_demo_orders", INITIAL_DEMO_ORDERS);
 
     if (method === "GET") {
       const urlObj = new URL(`http://dummy${endpoint}`);
@@ -385,8 +522,8 @@ function handleClientFallback(endpoint, options = {}, originalError) {
       const tableNumber = (urlObj.searchParams.get("tableNumber") || body.tableNumber || "T1").replace(/^Table\s*/i, "").trim();
       const sessionId = urlObj.searchParams.get("sessionId") || body.session_id || `SESSION-${tableNumber}-DEMO`;
 
-      const allOrders = getLocalDemoData("spicy_demo_orders", []);
-      const sessionOrders = allOrders.filter((o) => o.session_id === sessionId || o.table_number === tableNumber);
+      const allOrders = getLocalDemoData("spicy_demo_orders", INITIAL_DEMO_ORDERS);
+      const sessionOrders = allOrders.filter((o) => o.session_id === sessionId || o.table_number === tableNumber || o.tableNumber === tableNumber);
 
       const subtotal = sessionOrders.length > 0
         ? sessionOrders.reduce((sum, o) => sum + (o.subtotal || 0), 0)
@@ -490,7 +627,7 @@ function handleClientFallback(endpoint, options = {}, originalError) {
   // 6. GUEST SESSIONS
   if (endpoint.startsWith("/sessions/")) {
     const sessionId = endpoint.split("/sessions/")[1];
-    const allOrders = getLocalDemoData("spicy_demo_orders", []);
+    const allOrders = getLocalDemoData("spicy_demo_orders", INITIAL_DEMO_ORDERS);
     const sessionOrders = allOrders.filter((o) => o.session_id === sessionId);
     const subtotal = sessionOrders.reduce((sum, o) => sum + (o.subtotal || 0), 0);
     const tax = Math.round(subtotal * 0.05 * 100) / 100;
@@ -539,16 +676,33 @@ function handleClientFallback(endpoint, options = {}, originalError) {
 
   // 8. REPORTS & ANALYTICS
   if (endpoint.startsWith("/reports/analytics")) {
-    const orders = getLocalDemoData("spicy_demo_orders", []);
-    const bookings = getLocalDemoData("spicy_demo_bookings", []);
-    const totalRev = orders.reduce((sum, o) => sum + (o.total || 0), 0);
+    const orders = getLocalDemoData("spicy_demo_orders", INITIAL_DEMO_ORDERS);
+    const bookings = getLocalDemoData("spicy_demo_bookings", INITIAL_DEMO_BOOKINGS);
+    const totalRev = orders.reduce((sum, o) => sum + (o.total || o.subtotal || 0), 0);
+    const today = new Date().toISOString().split("T")[0];
+    const todayBookings = bookings.filter((b) => b.booking_date === today).length;
+    const activeOrdersCount = orders.filter((o) => ["ORDER_PLACED", "ACCEPTED", "PREPARING", "READY"].includes(o.status)).length;
 
     return {
       summary: {
         totalRevenue: Math.round(totalRev * 100) / 100,
+        todayRevenue: Math.round(totalRev * 0.45 * 100) / 100,
         totalOrders: orders.length,
+        activeOrders: activeOrdersCount,
         totalBookings: bookings.length,
+        todayBookings: todayBookings || 2,
       },
+      revenueByMethod: [
+        { payment_method: "UPI", transaction_count: Math.max(1, Math.floor(orders.length * 0.6)), total_amount: Math.round(totalRev * 0.6) },
+        { payment_method: "CARD", transaction_count: Math.max(1, Math.floor(orders.length * 0.3)), total_amount: Math.round(totalRev * 0.3) },
+        { payment_method: "CASH", transaction_count: Math.max(1, Math.floor(orders.length * 0.1)), total_amount: Math.round(totalRev * 0.1) },
+      ],
+      topItems: [
+        { name: "Butter Chicken", total_quantity: 28, total_sales: 11144 },
+        { name: "Tandoori Chicken", total_quantity: 24, total_sales: 8376 },
+        { name: "Chicken Biryani", total_quantity: 21, total_sales: 7329 },
+        { name: "Paneer Tikka", total_quantity: 18, total_sales: 5922 },
+      ],
     };
   }
 
@@ -583,8 +737,43 @@ function handleClientFallback(endpoint, options = {}, originalError) {
     return { message: "Staff created successfully" };
   }
 
-  // 10. RESTAURANT PROFILE & QR
+  // 10. QR CODES & STAND GENERATOR
+  if (endpoint.includes("/qr/table/") || (endpoint.startsWith("/tables/") && endpoint.includes("/qr"))) {
+    const match = endpoint.match(/\/table\/([A-Za-z0-9]+)/i) || endpoint.match(/\/tables\/([A-Za-z0-9]+)\/qr/i);
+    const tableIdentifier = match ? match[1] : "1";
+    const cleanNum = String(tableIdentifier).replace(/^Table\s*/i, "").trim();
+
+    const targetTable = tables.find((t) =>
+      t.id === Number(cleanNum) ||
+      t.table_number.toLowerCase() === cleanNum.toLowerCase() ||
+      t.table_number.toLowerCase() === `t${cleanNum.replace(/^T/i, "").toLowerCase()}`
+    ) || tables[0];
+
+    const targetUrl = `${window.location.origin}/#/restaurant/spicy-spoon/table/${targetTable.table_number}`;
+    const qrCodeDataUrl = await generateQrDataUrl(targetUrl);
+
+    return {
+      table: targetTable,
+      targetUrl,
+      qrCodeDataUrl,
+    };
+  }
+
+  if (endpoint.includes("/restaurants/") && endpoint.includes("/qr")) {
+    const targetUrl = `${window.location.origin}/#/restaurant/spicy-spoon`;
+    const qrCodeDataUrl = await generateQrDataUrl(targetUrl);
+    return {
+      name: "Spicy Spoon",
+      slug: "spicy-spoon",
+      targetUrl,
+      qrCodeDataUrl,
+    };
+  }
+
+  // 11. RESTAURANT PROFILE & SETTINGS
   if (endpoint.includes("/restaurants/")) {
+    const targetUrl = `${window.location.origin}/#/restaurant/spicy-spoon`;
+    const qrCodeDataUrl = await generateQrDataUrl(targetUrl);
     return {
       name: "Spicy Spoon",
       slug: "spicy-spoon",
@@ -593,17 +782,30 @@ function handleClientFallback(endpoint, options = {}, originalError) {
       phone: "+91 73958 77142",
       tax_rate: 5.0,
       service_charge_rate: 2.5,
-      qrCodeDataUrl: "data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='100' height='100'><rect width='100' height='100' fill='%23ff5722'/></svg>",
-      targetUrl: `${window.location.origin}/#/restaurant/spicy-spoon`,
+      targetUrl,
+      qrCodeDataUrl,
     };
   }
 
   if (endpoint.startsWith("/settings")) {
-    return {
+    let settings = getLocalDemoData("spicy_demo_settings", {
       name: "Spicy Spoon",
+      slug: "spicy-spoon",
+      cuisine: "Contemporary Indian & Tandoori",
       tax_rate: 5.0,
       service_charge_rate: 2.5,
-    };
+      address: "Tiruppur-Palladam road, Tamil Nadu",
+      phone: "+91 73958 77142",
+    });
+
+    if (method === "PUT") {
+      settings = { ...settings, ...body };
+      setLocalDemoData("spicy_demo_settings", settings);
+      dispatchClientEvent("SETTINGS_UPDATED", settings);
+      return { message: "Restaurant settings updated successfully", settings };
+    }
+
+    return settings;
   }
 
   return { message: "Success" };

@@ -81,6 +81,31 @@ function Kitchen({ onLogout }) {
     }
   };
 
+  const handleSpawnDemoTicket = async () => {
+    const sampleTables = ["T2", "T4", "T6", "T8", "T10", "T12"];
+    const chosenTable = sampleTables[Math.floor(Math.random() * sampleTables.length)];
+    const sampleMenus = [
+      { id: 1, name: "Tandoori Chicken (Half)", unit_price: 349, quantity: 1, note: "Extra mint chutney" },
+      { id: 2, name: "Butter Chicken", unit_price: 399, quantity: 1, note: "Medium spice, extra butter" },
+      { id: 3, name: "Chicken Biryani", unit_price: 349, quantity: 2, note: "Spicy dum style" },
+      { id: 4, name: "Prawn Fry", unit_price: 519, quantity: 1, note: "Crispy with lemon" },
+      { id: 5, name: "Paneer Tikka", unit_price: 329, quantity: 1, note: "Charred edges" },
+    ];
+    const item1 = sampleMenus[Math.floor(Math.random() * sampleMenus.length)];
+    const item2 = sampleMenus[(Math.floor(Math.random() * sampleMenus.length) + 1) % sampleMenus.length];
+
+    try {
+      await api.createOrder({
+        tableNumber: chosenTable,
+        customer_name: "Walk-in Diner",
+        items: [item1, item2],
+      });
+      fetchKitchenOrders();
+    } catch (err) {
+      alert("Failed to spawn demo ticket: " + err.message);
+    }
+  };
+
   // Group orders by KDS lanes
   const newOrders = useMemo(() => orders.filter((o) => o.status === "ORDER_PLACED"), [orders]);
   const acceptedOrders = useMemo(() => orders.filter((o) => o.status === "ACCEPTED"), [orders]);
@@ -112,6 +137,11 @@ function Kitchen({ onLogout }) {
         </div>
 
         <div className="kds-top-actions">
+          <button className="kds-btn-spawn" onClick={handleSpawnDemoTicket} title="Spawn Sample Order Ticket for Testing">
+            <Sparkles size={15} />
+            <span>+ Spawn Test Ticket</span>
+          </button>
+
           <a href="#/admin" className="kds-nav-btn admin-btn" title="Switch to Admin Dashboard">
             <ShieldCheck size={16} />
             <span>Admin Portal</span>
