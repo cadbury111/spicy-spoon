@@ -99,9 +99,10 @@ function Admin({ onLogout }) {
   const [tableQrCache, setTableQrCache] = useState({});
 
   // Fetch all Admin data
-  const fetchAllData = useCallback(async () => {
+  // Fetch all Admin data
+  const fetchAllData = useCallback(async (isInitial = false) => {
     try {
-      setLoading(true);
+      if (isInitial) setLoading(true);
       const [aData, tData, oData, bData, bkData, mData, sData, stData, qrData] = await Promise.all([
         api.getAnalytics().catch(() => null),
         api.getTables().catch(() => []),
@@ -114,27 +115,27 @@ function Admin({ onLogout }) {
         api.getRestaurantQr("spicy-spoon").catch(() => null),
       ]);
 
-      setAnalytics(aData);
-      setTables(tData || []);
-      setOrders(oData || []);
-      setBills(bData || []);
-      setBookings(bkData || []);
-      setMenuItems(mData || []);
-      setRestaurantSettings(sData);
-      setStaffList(stData || []);
-      setRestaurantQrData(qrData);
+      if (aData) setAnalytics(aData);
+      if (tData) setTables(tData);
+      if (oData) setOrders(oData);
+      if (bData) setBills(bData);
+      if (bkData) setBookings(bkData);
+      if (mData) setMenuItems(mData);
+      if (sData) setRestaurantSettings(sData);
+      if (stData) setStaffList(stData);
+      if (qrData) setRestaurantQrData(qrData);
     } catch (err) {
       console.error("Admin fetch error:", err);
     } finally {
-      setLoading(false);
+      if (isInitial) setLoading(false);
     }
   }, []);
 
   useEffect(() => {
-    fetchAllData();
+    fetchAllData(true);
     const timer = setInterval(() => {
-      fetchAllData();
-    }, 10000);
+      fetchAllData(false);
+    }, 5000);
     return () => clearInterval(timer);
   }, [fetchAllData]);
 
@@ -155,7 +156,7 @@ function Admin({ onLogout }) {
           "MENU_UPDATED",
         ].includes(event.type)
       ) {
-        fetchAllData();
+        fetchAllData(false);
       }
     },
     [fetchAllData]
@@ -191,7 +192,7 @@ function Admin({ onLogout }) {
       await api.confirmCashPayment({ bill_id: billId });
       alert("Cash payment confirmed and table released successfully!");
       setSelectedTable(null);
-      fetchAllData();
+      fetchAllData(false);
     } catch (err) {
       alert("Failed to confirm cash: " + err.message);
     }
@@ -201,31 +202,37 @@ function Admin({ onLogout }) {
   const handleReleaseTable = async (tableId) => {
     if (!confirm("Are you sure you want to release this table to AVAILABLE?")) return;
     try {
+      setTables((prev) => prev.map((t) => (t.id === tableId ? { ...t, status: "AVAILABLE" } : t)));
       await api.updateTableStatus(tableId, { status: "AVAILABLE" });
       setSelectedTable(null);
-      fetchAllData();
+      fetchAllData(false);
     } catch (err) {
       alert("Error releasing table: " + err.message);
+      fetchAllData(false);
     }
   };
 
   // Update Booking Status
   const handleUpdateBookingStatus = async (bookingId, status) => {
+    setBookings((prev) => prev.map((b) => (b.id === bookingId ? { ...b, status } : b)));
     try {
       await api.updateBookingStatus(bookingId, status);
-      fetchAllData();
+      fetchAllData(false);
     } catch (err) {
       alert("Failed to update booking status: " + err.message);
+      fetchAllData(false);
     }
   };
 
   // Update Order Status
   const handleUpdateOrderStatus = async (orderId, status) => {
+    setOrders((prev) => prev.map((o) => (o.id === orderId ? { ...o, status } : o)));
     try {
       await api.updateOrderStatus(orderId, status);
-      fetchAllData();
+      fetchAllData(false);
     } catch (err) {
       alert("Failed to update order: " + err.message);
+      fetchAllData(false);
     }
   };
 

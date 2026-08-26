@@ -29,24 +29,28 @@ function Kitchen({ onLogout }) {
     }
   });
 
-  const fetchKitchenOrders = useCallback(async () => {
+  const fetchKitchenOrders = useCallback(async (isInitial = false) => {
     try {
-      setLoading(true);
+      if (isInitial) setLoading(true);
       const data = await api.getOrders();
       // Keep active kitchen orders
-      const kitchenOrders = data.filter((o) =>
+      const kitchenOrders = (data || []).filter((o) =>
         ["ORDER_PLACED", "ACCEPTED", "PREPARING", "READY", "SERVED"].includes(o.status)
       );
       setOrders(kitchenOrders);
     } catch (err) {
       console.warn("Failed to fetch kitchen orders:", err.message);
     } finally {
-      setLoading(false);
+      if (isInitial) setLoading(false);
     }
   }, []);
 
   useEffect(() => {
-    fetchKitchenOrders();
+    fetchKitchenOrders(true);
+    const interval = setInterval(() => {
+      fetchKitchenOrders(false);
+    }, 5000);
+    return () => clearInterval(interval);
   }, [fetchKitchenOrders]);
 
   // WebSocket Live Updates
@@ -54,7 +58,7 @@ function Kitchen({ onLogout }) {
     (event) => {
       if (!event || !event.type) return;
       if (["NEW_ORDER", "ORDER_STATUS_UPDATED", "ORDER_DELETED"].includes(event.type)) {
-        fetchKitchenOrders();
+        fetchKitchenOrders(false);
       }
     },
     [fetchKitchenOrders]
@@ -63,11 +67,15 @@ function Kitchen({ onLogout }) {
   useWebSocket(handleWsEvent);
 
   const handleUpdateStatus = async (orderId, nextStatus) => {
+    // Instant optimistic UI update (< 1ms)
+    setOrders((prev) =>
+      prev.map((o) => (o.id === orderId ? { ...o, status: nextStatus } : o))
+    );
     try {
       await api.updateOrderStatus(orderId, nextStatus);
-      fetchKitchenOrders();
     } catch (err) {
       alert("Failed to update status: " + err.message);
+      fetchKitchenOrders(false);
     }
   };
 

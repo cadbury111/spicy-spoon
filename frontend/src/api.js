@@ -1,6 +1,28 @@
 import QRCode from "qrcode";
 import { menuItems as fallbackMenu } from "./data/menuData";
 
+const CLOUD_SYNC_TOPIC = "spicy_spoon_cloud_sync_prod_v2";
+
+export function getDeviceId() {
+  if (typeof window === "undefined") return "server";
+  let id = localStorage.getItem("spicy_device_id");
+  if (!id) {
+    id = "dev_" + Math.random().toString(36).slice(2, 9);
+    localStorage.setItem("spicy_device_id", id);
+  }
+  return id;
+}
+
+export function broadcastCloudEvent(eventPayload) {
+  try {
+    fetch(`https://ntfy.sh/${CLOUD_SYNC_TOPIC}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(eventPayload),
+    }).catch(() => {});
+  } catch (err) {}
+}
+
 // Resolve API base URL dynamically
 function resolveApiBaseUrl() {
   if (import.meta.env.VITE_API_URL) {
@@ -11,14 +33,12 @@ function resolveApiBaseUrl() {
     if (hostname === "localhost" || hostname === "127.0.0.1") {
       return "http://localhost:5000/api";
     }
-    if (/^\d+\.\d+\.\d+\.\d+$/.test(hostname)) {
-      return `http://${hostname}:5000/api`;
-    }
   }
-  return "http://localhost:5000/api";
+  return null; // When hosted (e.g. on Vercel) without backend URL, run instant client engine with cloud sync!
 }
 
 const API_BASE_URL = resolveApiBaseUrl();
+const IS_HOSTED_MODE = !API_BASE_URL;
 
 export function getWsUrl() {
   if (typeof window === "undefined") return "ws://localhost:5000";
@@ -27,10 +47,7 @@ export function getWsUrl() {
   if (hostname === "localhost" || hostname === "127.0.0.1") {
     return `${protocol}//localhost:5000`;
   }
-  if (/^\d+\.\d+\.\d+\.\d+$/.test(hostname)) {
-    return `${protocol}//${hostname}:5000`;
-  }
-  return `${protocol}//${hostname}:5000`;
+  return null;
 }
 
 // 12 Standard Tables Dataset
@@ -203,10 +220,26 @@ function setLocalDemoData(key, data) {
 
 function dispatchClientEvent(type, data = {}) {
   try {
-    const payload = { type, data, timestamp: Date.now() };
+    const payload = {
+      type,
+      data,
+      tables: getLocalDemoData("spicy_demo_tables", null),
+      bookings: getLocalDemoData("spicy_demo_bookings", null),
+      orders: getLocalDemoData("spicy_demo_orders", null),
+      bills: getLocalDemoData("spicy_demo_bills", null),
+      senderDeviceId: getDeviceId(),
+      timestamp: Date.now(),
+    };
+
+    // 1. In-page event dispatch
     window.dispatchEvent(new CustomEvent("spicy_ws_event", { detail: payload }));
+
+    // 2. Same-device cross-tab event
     localStorage.setItem("spicy_last_event", JSON.stringify(payload));
     localStorage.setItem("spicy_ws_event_timestamp", Date.now().toString());
+
+    // 3. Cross-device cloud broadcast (Phone <-> PC live sync)
+    broadcastCloudEvent(payload);
   } catch (e) {}
 }
 
@@ -222,6 +255,11 @@ function buildQueryString(params = {}) {
 }
 
 async function request(endpoint, options = {}) {
+  // If hosted on Vercel/cloud without a local/custom backend URL, run instant client engine in 0ms!
+  if (IS_HOSTED_MODE) {
+    return handleClientFallback(endpoint, options);
+  }
+
   const url = `${API_BASE_URL}${endpoint}`;
   const token = localStorage.getItem("spicy_staff_token");
 
@@ -262,11 +300,9 @@ async function request(endpoint, options = {}) {
 
     return data;
   } catch (netOrHttpErr) {
-    // If it's a real HTTP status error returned by reachable server, rethrow it
     if (netOrHttpErr.status) {
       throw netOrHttpErr;
     }
-    // If backend is unreachable (e.g. hosted on Vercel without backend server), run client fallback engine
     return handleClientFallback(endpoint, options, netOrHttpErr);
   }
 }

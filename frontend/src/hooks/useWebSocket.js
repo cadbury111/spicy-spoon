@@ -1,10 +1,13 @@
 import { useEffect, useRef, useState, useCallback } from "react";
-import { getWsUrl } from "../api";
+import { getWsUrl, getDeviceId } from "../api";
+
+const CLOUD_SYNC_TOPIC = "spicy_spoon_cloud_sync_prod_v2";
 
 export function useWebSocket(onEvent) {
-  const [isConnected, setIsConnected] = useState(false);
+  const [isConnected, setIsConnected] = useState(true);
   const [lastMessage, setLastMessage] = useState(null);
   const wsRef = useRef(null);
+  const sseRef = useRef(null);
   const reconnectTimeoutRef = useRef(null);
   const onEventRef = useRef(onEvent);
 
@@ -12,15 +15,17 @@ export function useWebSocket(onEvent) {
     onEventRef.current = onEvent;
   }, [onEvent]);
 
-  const connect = useCallback(() => {
+  // 1. Connect Local WebSocket (for local dev backend)
+  const connectLocalWs = useCallback(() => {
+    const wsUrl = getWsUrl();
+    if (!wsUrl || typeof window === "undefined") return;
+
     try {
-      const url = getWsUrl();
-      const ws = new WebSocket(url);
+      const ws = new WebSocket(wsUrl);
       wsRef.current = ws;
 
       ws.onopen = () => {
         setIsConnected(true);
-        console.log("⚡ Connected to Spicy Spoon Live WebSocket");
       };
 
       ws.onmessage = (event) => {
@@ -30,33 +35,80 @@ export function useWebSocket(onEvent) {
           if (onEventRef.current) {
             onEventRef.current(payload);
           }
-        } catch (e) {
-          // Non-JSON message
-        }
+        } catch (e) {}
       };
 
       ws.onclose = () => {
-        setIsConnected(false);
-        // Attempt reconnect after 3 seconds
-        reconnectTimeoutRef.current = setTimeout(() => {
-          connect();
-        }, 3000);
+        reconnectTimeoutRef.current = setTimeout(connectLocalWs, 4000);
       };
 
-      ws.onerror = (err) => {
-        console.warn("WebSocket connection warning:", err);
-        ws.close();
+      ws.onerror = () => {
+        try {
+          ws.close();
+        } catch (e) {}
       };
-    } catch (err) {
-      console.warn("WebSocket init error:", err);
-      reconnectTimeoutRef.current = setTimeout(() => {
-        connect();
-      }, 5000);
-    }
+    } catch (err) {}
+  }, []);
+
+  // 2. Connect Cloud Realtime Stream (for instant Phone <-> PC Cross-Device Sync)
+  const connectCloudStream = useCallback(() => {
+    if (typeof window === "undefined" || typeof EventSource === "undefined") return;
+
+    try {
+      const sse = new EventSource(`https://ntfy.sh/${CLOUD_SYNC_TOPIC}/sse`);
+      sseRef.current = sse;
+
+      sse.onopen = () => {
+        setIsConnected(true);
+      };
+
+      sse.onmessage = (event) => {
+        try {
+          const raw = JSON.parse(event.data);
+          if (raw.event === "message" && raw.message) {
+            const payload = JSON.parse(raw.message);
+            const myDeviceId = getDeviceId();
+
+            // Ignore our own echo to avoid double processing
+            if (payload.senderDeviceId && payload.senderDeviceId === myDeviceId) {
+              return;
+            }
+
+            // Sync shared state data into local storage from the other device
+            if (payload.tables && Array.isArray(payload.tables)) {
+              localStorage.setItem("spicy_demo_tables", JSON.stringify(payload.tables));
+            }
+            if (payload.bookings && Array.isArray(payload.bookings)) {
+              localStorage.setItem("spicy_demo_bookings", JSON.stringify(payload.bookings));
+            }
+            if (payload.orders && Array.isArray(payload.orders)) {
+              localStorage.setItem("spicy_demo_orders", JSON.stringify(payload.orders));
+            }
+            if (payload.bills && Array.isArray(payload.bills)) {
+              localStorage.setItem("spicy_demo_bills", JSON.stringify(payload.bills));
+            }
+
+            // Trigger in-app listeners (Admin, Kitchen, Customer Booking, Menu)
+            setLastMessage(payload);
+            if (onEventRef.current) {
+              onEventRef.current(payload);
+            }
+          }
+        } catch (err) {}
+      };
+
+      sse.onerror = () => {
+        try {
+          sse.close();
+        } catch (e) {}
+        setTimeout(connectCloudStream, 5000);
+      };
+    } catch (err) {}
   }, []);
 
   useEffect(() => {
-    connect();
+    connectLocalWs();
+    connectCloudStream();
 
     // Client event listener for standalone/hosted Vercel sync
     const handleClientEvent = (e) => {
@@ -84,14 +136,11 @@ export function useWebSocket(onEvent) {
     return () => {
       window.removeEventListener("spicy_ws_event", handleClientEvent);
       window.removeEventListener("storage", handleStorageEvent);
-      if (reconnectTimeoutRef.current) {
-        clearTimeout(reconnectTimeoutRef.current);
-      }
-      if (wsRef.current) {
-        wsRef.current.close();
-      }
+      if (reconnectTimeoutRef.current) clearTimeout(reconnectTimeoutRef.current);
+      if (wsRef.current) wsRef.current.close();
+      if (sseRef.current) sseRef.current.close();
     };
-  }, [connect]);
+  }, [connectLocalWs, connectCloudStream]);
 
   const sendMessage = useCallback((type, data = {}) => {
     if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
