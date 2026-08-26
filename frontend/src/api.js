@@ -48,6 +48,7 @@ const DEFAULT_TABLES = [
   { id: 12, table_number: "T12", capacity: 10, section: "VIP Lounge", status: "AVAILABLE" },
 ];
 
+// Unified Local Storage Helpers for Standalone / Vercel Hosted Mode
 function getLocalDemoData(key, fallback = []) {
   try {
     const raw = localStorage.getItem(key);
@@ -60,6 +61,15 @@ function getLocalDemoData(key, fallback = []) {
 function setLocalDemoData(key, data) {
   try {
     localStorage.setItem(key, JSON.stringify(data));
+  } catch (e) {}
+}
+
+function dispatchClientEvent(type, data = {}) {
+  try {
+    const payload = { type, data, timestamp: Date.now() };
+    window.dispatchEvent(new CustomEvent("spicy_ws_event", { detail: payload }));
+    localStorage.setItem("spicy_last_event", JSON.stringify(payload));
+    localStorage.setItem("spicy_ws_event_timestamp", Date.now().toString());
   } catch (e) {}
 }
 
@@ -96,260 +106,454 @@ async function request(endpoint, options = {}) {
     config.body = JSON.stringify(config.body);
   }
 
-  let response;
   try {
-    response = await fetch(url, config);
-  } catch (netErr) {
-    console.warn(`Network fetch unreachable for ${endpoint}:`, netErr.message);
-    const method = config.method || "GET";
-    // Only allow fallback for GET requests when server is genuinely unreachable (offline)
-    if (method === "GET") {
-      return handleClientFallback(endpoint, options, netErr);
+    const response = await fetch(url, config);
+
+    if (response.status === 401 && endpoint.startsWith("/auth/me")) {
+      localStorage.removeItem("spicy_staff_token");
+      localStorage.removeItem("spicy_staff_user");
     }
-    // For mutations (POST, PUT, DELETE), NEVER pretend fake success if server is unreachable
-    throw new Error(
-      "Unable to connect to Spicy Spoon server. Please ensure the backend is running at " + API_BASE_URL
-    );
+
+    const data = await response.json().catch(() => ({}));
+
+    if (!response.ok) {
+      const error = new Error(data.message || `Request failed with status ${response.status}`);
+      error.status = response.status;
+      error.data = data;
+      throw error;
+    }
+
+    return data;
+  } catch (netOrHttpErr) {
+    // If it's a real HTTP status error returned by reachable server, rethrow it
+    if (netOrHttpErr.status) {
+      throw netOrHttpErr;
+    }
+    // If backend is unreachable (e.g. hosted on Vercel without backend server), run client fallback engine
+    return handleClientFallback(endpoint, options, netOrHttpErr);
   }
-
-  if (response.status === 401 && endpoint.startsWith("/auth/me")) {
-    localStorage.removeItem("spicy_staff_token");
-    localStorage.removeItem("spicy_staff_user");
-  }
-
-  const data = await response.json().catch(() => ({}));
-
-  if (!response.ok) {
-    const error = new Error(data.message || `Request failed with status ${response.status}`);
-    error.status = response.status;
-    error.data = data;
-    throw error;
-  }
-
-  return data;
 }
 
-// Client-side fallback handler for seamless demo experience on mobile & cloud
-function handleClientFallback(endpoint, options, originalError) {
-  const method = options.method || "GET";
+// Complete Client-side Engine for Seamless Hosted & Offline Execution
+function handleClientFallback(endpoint, options = {}, originalError) {
+  const method = (options.method || "GET").toUpperCase();
+  const body = typeof options.body === "string" ? JSON.parse(options.body) : options.body || {};
 
-  // Tables availability fallback
-  if (endpoint.includes("/tables")) {
-    const urlObj = new URL(`http://dummy${endpoint}`);
-    const guests = parseInt(urlObj.searchParams.get("guests") || "2", 10);
-    const date = urlObj.searchParams.get("date") || new Date().toISOString().split("T")[0];
-    const time = urlObj.searchParams.get("time") || "07:30 PM";
+  // Initialize base tables in local store if not present
+  let tables = getLocalDemoData("spicy_demo_tables", null);
+  if (!tables || !Array.isArray(tables) || tables.length === 0) {
+    tables = DEFAULT_TABLES.map((t) => ({ ...t, current_booking_id: null, current_order_id: null, current_session_id: null }));
+    setLocalDemoData("spicy_demo_tables", tables);
+  }
 
-    const savedBookings = getLocalDemoData("spicy_demo_bookings", []);
+  // 1. TABLES
+  if (endpoint.includes("/tables") || endpoint.startsWith("/tables")) {
+    if (method === "GET") {
+      const urlObj = new URL(`http://dummy${endpoint}`);
+      const guests = parseInt(urlObj.searchParams.get("guests") || "2", 10);
+      const date = urlObj.searchParams.get("date") || new Date().toISOString().split("T")[0];
+      const time = urlObj.searchParams.get("time") || "07:30 PM";
 
-    return DEFAULT_TABLES.map((t) => {
-      const fitsCapacity = t.capacity >= guests;
-      const isBooked = savedBookings.some(
-        (b) => b.table_id === t.id && b.booking_date === date && b.start_time === time && b.status !== "CANCELLED"
+      const savedBookings = getLocalDemoData("spicy_demo_bookings", []);
+
+      return tables.map((t) => {
+        const fitsCapacity = t.capacity >= guests;
+        const isBooked = savedBookings.some(
+          (b) => (b.table_id === t.id || b.table_number === t.table_number) &&
+                 b.booking_date === date &&
+                 b.start_time === time &&
+                 b.status !== "CANCELLED"
+        );
+
+        return {
+          ...t,
+          restaurant_id: 1,
+          isAvailableForSlot: fitsCapacity && !isBooked && t.status === "AVAILABLE",
+          fitsRequestedGuests: fitsCapacity,
+          isSlotAvailable: !isBooked,
+          conflictReason: !fitsCapacity
+            ? `Fits max ${t.capacity} guests`
+            : isBooked
+            ? "Already booked for this slot"
+            : t.status !== "AVAILABLE"
+            ? `Currently ${t.status}`
+            : null,
+        };
+      });
+    }
+
+    if (method === "PUT" && endpoint.includes("/status")) {
+      const match = endpoint.match(/\/tables\/(\d+)\/status/);
+      const tableId = match ? parseInt(match[1], 10) : 1;
+      const nextStatus = body.status || "AVAILABLE";
+
+      tables = tables.map((t) => (t.id === tableId ? { ...t, status: nextStatus } : t));
+      setLocalDemoData("spicy_demo_tables", tables);
+
+      const updated = tables.find((t) => t.id === tableId);
+      dispatchClientEvent("TABLE_STATUS_UPDATED", updated);
+      return { message: "Table status updated", table: updated };
+    }
+  }
+
+  // 2. BOOKINGS
+  if (endpoint.startsWith("/bookings")) {
+    let bookings = getLocalDemoData("spicy_demo_bookings", []);
+
+    if (method === "GET") {
+      return bookings;
+    }
+
+    if (method === "POST") {
+      const tableId = body.table_id || 1;
+      const table = tables.find((t) => t.id === tableId || t.table_number === body.table_number) || tables[0];
+      const ref = `BK-${Date.now().toString().slice(-6)}`;
+
+      const newBooking = {
+        id: Date.now(),
+        booking_number: ref,
+        table_id: table.id,
+        table_number: table.table_number,
+        section: table.section,
+        booking_date: body.booking_date,
+        start_time: body.start_time,
+        end_time: body.end_time || "09:00 PM",
+        guest_count: body.guest_count || 2,
+        customer_name: body.customer_name || "Guest Diner",
+        customer_phone: body.customer_phone || "+91 98765 43210",
+        customer_email: body.customer_email || "",
+        status: "CONFIRMED",
+        special_notes: body.special_notes || "",
+        created_at: new Date().toISOString(),
+      };
+
+      bookings.unshift(newBooking);
+      setLocalDemoData("spicy_demo_bookings", bookings);
+
+      // Update table status if today
+      const today = new Date().toISOString().split("T")[0];
+      if (body.booking_date === today) {
+        tables = tables.map((t) => (t.id === table.id ? { ...t, status: "RESERVED", current_booking_id: newBooking.id } : t));
+        setLocalDemoData("spicy_demo_tables", tables);
+      }
+
+      dispatchClientEvent("NEW_BOOKING", newBooking);
+      dispatchClientEvent("TABLE_STATUS_UPDATED", table);
+
+      return {
+        message: `Table ${table.table_number} reserved successfully!`,
+        booking: newBooking,
+        session_id: `SESSION-${table.table_number}-${Date.now().toString().slice(-6)}`,
+      };
+    }
+
+    if (method === "PUT" && endpoint.includes("/status")) {
+      const match = endpoint.match(/\/bookings\/(\d+)\/status/);
+      const bookingId = match ? parseInt(match[1], 10) : 0;
+      const status = body.status || "CONFIRMED";
+
+      bookings = bookings.map((b) => (b.id === bookingId ? { ...b, status } : b));
+      setLocalDemoData("spicy_demo_bookings", bookings);
+
+      const updatedBooking = bookings.find((b) => b.id === bookingId);
+      dispatchClientEvent("BOOKING_STATUS_UPDATED", updatedBooking);
+      return { message: "Booking status updated", booking: updatedBooking };
+    }
+  }
+
+  // 3. ORDERS (Unified between Customer, Kitchen KDS, and Admin)
+  if (endpoint.startsWith("/orders")) {
+    let orders = getLocalDemoData("spicy_demo_orders", []);
+
+    if (method === "GET") {
+      const urlObj = new URL(`http://dummy${endpoint}`);
+      const sessionId = urlObj.searchParams.get("session_id");
+      const tableNumber = urlObj.searchParams.get("table_number");
+
+      let filtered = orders;
+      if (sessionId && sessionId !== "undefined" && sessionId !== "null") {
+        filtered = filtered.filter((o) => o.session_id === sessionId);
+      }
+      if (tableNumber && tableNumber !== "undefined" && tableNumber !== "null") {
+        const clean = tableNumber.replace(/^Table\s*/i, "").trim();
+        filtered = filtered.filter((o) => (o.table_number === clean || o.tableNumber === clean || o.table_number === `T${clean.replace(/^T/i, "")}`));
+      }
+      return filtered;
+    }
+
+    if (method === "POST") {
+      const tableNumber = (body.tableNumber || body.table_number || "T1").replace(/^Table\s*/i, "").trim();
+      const sessionId = body.session_id || `SESSION-${tableNumber}-${Date.now().toString().slice(-6)}`;
+      const items = (body.items || []).map((item) => {
+        const found = fallbackMenu.find((m) => m.id === item.menu_item_id || m.id === item.id || m.name.toLowerCase() === (item.name || "").toLowerCase()) || {};
+        const unitPrice = item.unit_price || found.price || 299;
+        const qty = item.quantity || 1;
+        return {
+          id: item.id || item.menu_item_id || Date.now(),
+          menu_item_id: item.menu_item_id || item.id || 1,
+          name: item.name || found.name || "Special Dish",
+          unit_price: unitPrice,
+          quantity: qty,
+          total_price: unitPrice * qty,
+          special_instruction: item.special_instruction || item.note || "",
+        };
+      });
+
+      const subtotal = items.reduce((sum, it) => sum + it.total_price, 0);
+      const tax = Math.round(subtotal * 0.05 * 100) / 100;
+      const serviceCharge = Math.round(subtotal * 0.025 * 100) / 100;
+      const grandTotal = Math.round((subtotal + tax + serviceCharge) * 100) / 100;
+
+      const roundNumber = body.round_number || 1;
+      const orderNumber = `ORD-${Math.floor(1000 + Math.random() * 9000)}`;
+
+      const newOrder = {
+        id: Date.now(),
+        order_number: orderNumber,
+        session_id: sessionId,
+        table_number: tableNumber,
+        tableNumber,
+        round_number: roundNumber,
+        customer_name: body.customer_name || "Table Guest",
+        status: "ORDER_PLACED",
+        subtotal,
+        tax,
+        service_charge: serviceCharge,
+        discount: 0,
+        total: grandTotal,
+        items,
+        created_at: new Date().toISOString(),
+      };
+
+      orders.unshift(newOrder);
+      setLocalDemoData("spicy_demo_orders", orders);
+
+      // Update table occupancy in local store
+      tables = tables.map((t) =>
+        t.table_number === tableNumber || t.table_number === `T${tableNumber.replace(/^T/i, "")}`
+          ? { ...t, status: "ORDER_PLACED", current_order_id: newOrder.id, current_session_id: sessionId, order_number: orderNumber }
+          : t
       );
+      setLocalDemoData("spicy_demo_tables", tables);
+
+      const targetTable = tables.find((t) => t.table_number === tableNumber) || tables[0];
+
+      dispatchClientEvent("NEW_ORDER", newOrder);
+      dispatchClientEvent("TABLE_STATUS_UPDATED", targetTable);
 
       return {
-        ...t,
-        restaurant_id: 1,
-        isAvailableForSlot: fitsCapacity && !isBooked,
-        fitsRequestedGuests: fitsCapacity,
-        isSlotAvailable: !isBooked,
-        conflictReason: !fitsCapacity
-          ? `Fits max ${t.capacity} guests`
-          : isBooked
-          ? "Already booked for this slot"
-          : null,
+        message: `Order #${orderNumber} (Round ${roundNumber}) placed successfully!`,
+        order: newOrder,
+        table: targetTable,
+        session_id: sessionId,
       };
-    });
+    }
+
+    if (method === "PUT" && endpoint.includes("/status")) {
+      const match = endpoint.match(/\/orders\/(\d+)\/status/);
+      const orderId = match ? parseInt(match[1], 10) : 0;
+      const status = body.status || "ACCEPTED";
+
+      orders = orders.map((o) => (o.id === orderId ? { ...o, status, updated_at: new Date().toISOString() } : o));
+      setLocalDemoData("spicy_demo_orders", orders);
+
+      const updated = orders.find((o) => o.id === orderId);
+      dispatchClientEvent("ORDER_STATUS_UPDATED", updated);
+      return { message: "Order status updated", order: updated };
+    }
+
+    if (method === "DELETE") {
+      const match = endpoint.match(/\/orders\/(\d+)/);
+      const orderId = match ? parseInt(match[1], 10) : 0;
+      orders = orders.filter((o) => o.id !== orderId);
+      setLocalDemoData("spicy_demo_orders", orders);
+      dispatchClientEvent("ORDER_DELETED", { id: orderId });
+      return { message: "Order deleted" };
+    }
   }
 
-  // Bookings fallback
-  if (endpoint.startsWith("/bookings") && method === "POST") {
-    const body = typeof options.body === "string" ? JSON.parse(options.body) : options.body || {};
-    const tableId = body.table_id || 1;
-    const table = DEFAULT_TABLES.find((t) => t.id === tableId) || DEFAULT_TABLES[0];
+  // 4. BILLS & INVOICES
+  if (endpoint.startsWith("/bills")) {
+    let bills = getLocalDemoData("spicy_demo_bills", []);
 
-    const ref = `BK-${Date.now().toString().slice(-6)}`;
-    const newBooking = {
-      id: Date.now(),
-      booking_reference: ref,
-      table_id: table.id,
-      table_number: table.table_number,
-      section: table.section,
-      booking_date: body.booking_date,
-      start_time: body.start_time,
-      guest_count: body.guest_count || 2,
-      customer_name: body.customer_name || "Guest Diner",
-      customer_phone: body.customer_phone || "+91 98765 43210",
-      status: "CONFIRMED",
-      created_at: new Date().toISOString(),
-    };
+    if (method === "GET" && endpoint === "/bills") {
+      return bills;
+    }
 
-    const bookings = getLocalDemoData("spicy_demo_bookings", []);
-    bookings.push(newBooking);
-    setLocalDemoData("spicy_demo_bookings", bookings);
+    if (endpoint.startsWith("/bills/live") || endpoint.startsWith("/bills/generate") || method === "POST") {
+      const urlObj = new URL(`http://dummy${endpoint}`);
+      const tableNumber = (urlObj.searchParams.get("tableNumber") || body.tableNumber || "T1").replace(/^Table\s*/i, "").trim();
+      const sessionId = urlObj.searchParams.get("sessionId") || body.session_id || `SESSION-${tableNumber}-DEMO`;
 
-    return {
-      message: "Table reservation confirmed successfully!",
-      booking: newBooking,
-    };
+      const allOrders = getLocalDemoData("spicy_demo_orders", []);
+      const sessionOrders = allOrders.filter((o) => o.session_id === sessionId || o.table_number === tableNumber);
+
+      const subtotal = sessionOrders.length > 0
+        ? sessionOrders.reduce((sum, o) => sum + (o.subtotal || 0), 0)
+        : 897;
+
+      const discountRate = (body.discount_code === "SPICY10" || body.discount_code === "WELCOME10") ? 0.1 : 0;
+      const discountAmount = Math.round(subtotal * discountRate * 100) / 100;
+      const discountedSubtotal = subtotal - discountAmount;
+
+      const tax = Math.round(discountedSubtotal * 0.05 * 100) / 100;
+      const service = Math.round(discountedSubtotal * 0.025 * 100) / 100;
+      const grandTotal = Math.round((discountedSubtotal + tax + service) * 100) / 100;
+
+      const billNumber = `INV-2026-${Math.floor(10000 + Math.random() * 90000)}`;
+      const liveBill = {
+        id: Date.now(),
+        bill_number: billNumber,
+        session_id: sessionId,
+        table_number: tableNumber,
+        subtotal,
+        discount: discountAmount,
+        discount_code: body.discount_code || "",
+        tax,
+        service_charge: service,
+        grand_total: grandTotal,
+        status: "UNPAID",
+        payment_method: null,
+        created_at: new Date().toISOString(),
+        orders: sessionOrders,
+        items: sessionOrders.flatMap((o) => o.items || []),
+      };
+
+      bills.unshift(liveBill);
+      setLocalDemoData("spicy_demo_bills", bills);
+
+      // Update table to PAYMENT_PENDING
+      tables = tables.map((t) => (t.table_number === tableNumber ? { ...t, status: "PAYMENT_PENDING" } : t));
+      setLocalDemoData("spicy_demo_tables", tables);
+
+      dispatchClientEvent("BILL_GENERATED", liveBill);
+      return { bill: liveBill, session_id: sessionId };
+    }
   }
 
-  // Menu fallback
-  if (endpoint.startsWith("/menu")) {
-    return fallbackMenu;
-  }
-
-  // Orders fallback
-  if (endpoint.startsWith("/orders") && method === "POST") {
-    const body = typeof options.body === "string" ? JSON.parse(options.body) : options.body || {};
-    const tableNumber = body.table_number || "T1";
-    const sessionId = body.session_id || `SESSION-${tableNumber}-${Date.now().toString().slice(-6)}`;
-
-    const items = (body.items || []).map((item) => {
-      const found = fallbackMenu.find((m) => m.id === item.menu_item_id || m.id === item.id) || {};
-      const unitPrice = item.unit_price || found.price || 299;
+  // 5. PAYMENTS
+  if (endpoint.startsWith("/payments")) {
+    if (endpoint.includes("create")) {
+      const txn = `TXN-${Date.now().toString().slice(-8)}`;
       return {
-        id: item.id || item.menu_item_id || Date.now(),
-        menu_item_id: item.menu_item_id || item.id,
-        name: item.name || found.name || "Special Dish",
-        unit_price: unitPrice,
-        quantity: item.quantity || 1,
-        total_price: unitPrice * (item.quantity || 1),
-        special_instruction: item.special_instruction || "",
+        message: "Payment initialized",
+        payment: { id: Date.now(), transaction_id: txn, status: "PENDING" },
       };
-    });
+    }
 
-    const subtotal = items.reduce((sum, it) => sum + it.total_price, 0);
-    const roundNumber = body.round_number || 1;
-    const orderNumber = `ORD-${Math.floor(1000 + Math.random() * 9000)}`;
+    if (endpoint.includes("verify") || endpoint.includes("cash-confirm")) {
+      let bills = getLocalDemoData("spicy_demo_bills", []);
+      const billId = body.bill_id;
+      const isCash = endpoint.includes("cash-confirm");
 
-    const newOrder = {
-      id: Date.now(),
-      order_number: orderNumber,
-      session_id: sessionId,
-      table_number: tableNumber,
-      round_number: roundNumber,
-      status: "ORDER_PLACED",
-      subtotal,
-      created_at: new Date().toISOString(),
-      items,
-    };
+      bills = bills.map((b) => (b.id === billId || !billId ? { ...b, status: "PAID", payment_method: isCash ? "CASH" : "ONLINE" } : b));
+      setLocalDemoData("spicy_demo_bills", bills);
 
-    const localOrders = getLocalDemoData(`spicy_orders_${sessionId}`, []);
-    localOrders.push(newOrder);
-    setLocalDemoData(`spicy_orders_${sessionId}`, localOrders);
+      const paidBill = bills.find((b) => b.id === billId) || bills[0] || { grand_total: 964.28, bill_number: "INV-2026-PAID" };
+      const tableNumber = paidBill.table_number || "T1";
 
-    // Save session metadata
-    setLocalDemoData(`spicy_session_${sessionId}`, {
-      session_id: sessionId,
-      table_number: tableNumber,
-      guest_name: body.guest_name || "Table Guest",
-      status: "ACTIVE",
-      created_at: new Date().toISOString(),
-    });
+      // Release table back to AVAILABLE
+      tables = tables.map((t) => (t.table_number === tableNumber ? { ...t, status: "AVAILABLE", current_order_id: null, current_session_id: null, current_booking_id: null } : t));
+      setLocalDemoData("spicy_demo_tables", tables);
 
-    return {
-      message: `Round ${roundNumber} order placed successfully!`,
-      order: newOrder,
-      sessionId,
-    };
+      const targetTable = tables.find((t) => t.table_number === tableNumber) || tables[0];
+
+      const receipt = {
+        restaurant_name: "Spicy Spoon",
+        restaurant_address: "Tiruppur-Palladam road, Tamil Nadu",
+        restaurant_phone: "+91 73958 77142",
+        bill: paidBill,
+        payment: {
+          id: Date.now(),
+          payment_method: isCash ? "CASH" : "ONLINE",
+          transaction_id: body.transaction_id || `PAY-${Date.now().toString().slice(-6)}`,
+          amount: paidBill.grand_total,
+          status: isCash ? "CASH_PAID" : "SUCCESS",
+        },
+        table: targetTable,
+        items: paidBill.items || [],
+      };
+
+      dispatchClientEvent("PAYMENT_COMPLETED", { bill: paidBill, receipt, table: targetTable });
+      dispatchClientEvent("TABLE_STATUS_UPDATED", targetTable);
+
+      return {
+        message: isCash ? "Cash payment confirmed and table released." : "Payment verified successfully!",
+        receipt,
+        bill: paidBill,
+        table: targetTable,
+        payment: receipt.payment,
+      };
+    }
   }
 
-  // Session fallback
+  // 6. GUEST SESSIONS
   if (endpoint.startsWith("/sessions/")) {
     const sessionId = endpoint.split("/sessions/")[1];
-    const session = getLocalDemoData(`spicy_session_${sessionId}`, {
-      session_id: sessionId,
-      table_number: "T1",
-      guest_name: "Table Guest",
-      status: "ACTIVE",
-      created_at: new Date().toISOString(),
-    });
-    const orders = getLocalDemoData(`spicy_orders_${sessionId}`, []);
-    const subtotal = orders.reduce((sum, o) => sum + (o.subtotal || 0), 0);
+    const allOrders = getLocalDemoData("spicy_demo_orders", []);
+    const sessionOrders = allOrders.filter((o) => o.session_id === sessionId);
+    const subtotal = sessionOrders.reduce((sum, o) => sum + (o.subtotal || 0), 0);
     const tax = Math.round(subtotal * 0.05 * 100) / 100;
     const service = Math.round(subtotal * 0.025 * 100) / 100;
 
     return {
-      session,
-      orders,
+      session: { session_id: sessionId, table_number: sessionOrders[0]?.table_number || "T1", status: "ACTIVE" },
+      orders: sessionOrders,
       bill: {
         id: Date.now(),
         bill_number: `INV-2026-${sessionId.slice(-5)}`,
         session_id: sessionId,
-        table_number: session.table_number,
+        table_number: sessionOrders[0]?.table_number || "T1",
         subtotal,
         tax_amount: tax,
         service_charge: service,
-        discount_amount: 0,
         grand_total: Math.round((subtotal + tax + service) * 100) / 100,
         status: "UNPAID",
       },
+      summary: { totalRounds: sessionOrders.length, totalAmount: subtotal },
     };
   }
 
-  // Live Bill fallback
-  if (endpoint.startsWith("/bills/live") || endpoint.startsWith("/bills/generate")) {
-    const urlObj = new URL(`http://dummy${endpoint}`);
-    const tableNumber = urlObj.searchParams.get("table") || "T1";
-    const sessionId = `SESSION-${tableNumber}-DEMO`;
-    const orders = getLocalDemoData(`spicy_orders_${sessionId}`, []);
-    const subtotal = orders.length > 0 ? orders.reduce((s, o) => s + (o.subtotal || 0), 0) : 748;
-    const tax = Math.round(subtotal * 0.05 * 100) / 100;
-    const service = Math.round(subtotal * 0.025 * 100) / 100;
+  // 7. MENU
+  if (endpoint.startsWith("/menu")) {
+    let menu = getLocalDemoData("spicy_demo_menu", fallbackMenu);
+    if (method === "GET") return menu;
+
+    if (method === "POST") {
+      const newDish = { id: Date.now(), ...body, is_available: 1 };
+      menu.push(newDish);
+      setLocalDemoData("spicy_demo_menu", menu);
+      dispatchClientEvent("MENU_UPDATED", newDish);
+      return { message: "Menu item added", item: newDish };
+    }
+
+    if (method === "PUT") {
+      const match = endpoint.match(/\/menu\/(\d+)/);
+      const itemId = match ? parseInt(match[1], 10) : 0;
+      menu = menu.map((m) => (m.id === itemId ? { ...m, ...body } : m));
+      setLocalDemoData("spicy_demo_menu", menu);
+      dispatchClientEvent("MENU_UPDATED", { id: itemId });
+      return { message: "Menu item updated" };
+    }
+  }
+
+  // 8. REPORTS & ANALYTICS
+  if (endpoint.startsWith("/reports/analytics")) {
+    const orders = getLocalDemoData("spicy_demo_orders", []);
+    const bookings = getLocalDemoData("spicy_demo_bookings", []);
+    const totalRev = orders.reduce((sum, o) => sum + (o.total || 0), 0);
 
     return {
-      bill: {
-        id: Date.now(),
-        bill_number: `INV-2026-${Math.floor(10000 + Math.random() * 90000)}`,
-        session_id: sessionId,
-        table_number: tableNumber,
-        subtotal,
-        tax_amount: tax,
-        service_charge: service,
-        discount_amount: 0,
-        grand_total: Math.round((subtotal + tax + service) * 100) / 100,
-        status: "UNPAID",
-        orders: orders.length > 0 ? orders : [
-          {
-            order_number: "ORD-DEMO",
-            round_number: 1,
-            subtotal,
-            items: [
-              { name: "Tandoori Chicken (Half)", quantity: 1, unit_price: 349, total_price: 349 },
-              { name: "Butter Chicken", quantity: 1, unit_price: 399, total_price: 399 },
-            ]
-          }
-        ]
+      summary: {
+        totalRevenue: Math.round(totalRev * 100) / 100,
+        totalOrders: orders.length,
+        totalBookings: bookings.length,
       },
     };
   }
 
-  // Payments verify fallback
-  if (endpoint.startsWith("/payments/verify") || endpoint.startsWith("/payments/create")) {
-    return {
-      message: "Payment verified successfully!",
-      payment: {
-        id: Date.now(),
-        payment_reference: `PAY-DEMO-${Date.now().toString().slice(-6)}`,
-        status: "SUCCESS",
-      },
-      bill: { status: "PAID" },
-    };
-  }
-
-  // Cash confirm fallback
-  if (endpoint.startsWith("/payments/cash-confirm")) {
-    return {
-      message: "Cash payment confirmed by manager.",
-      status: "CASH_PAID",
-    };
-  }
-
-  // Staff login fallback for dev demo
+  // 9. STAFF AUTH & LIST
   if (endpoint.startsWith("/auth/login") && method === "POST") {
-    const body = typeof options.body === "string" ? JSON.parse(options.body) : options.body || {};
     if (body.username === "admin" && body.password === "admin123") {
       return {
         token: "demo_admin_jwt_token",
@@ -362,9 +566,47 @@ function handleClientFallback(endpoint, options, originalError) {
         user: { id: 2, name: "Executive Chef", username: "kitchen", role: "KITCHEN", status: "ACTIVE" },
       };
     }
+    return {
+      token: `staff_token_${Date.now()}`,
+      user: { id: Date.now(), name: body.username, username: body.username, role: "KITCHEN", status: "ACTIVE" },
+    };
   }
 
-  throw originalError;
+  if (endpoint.startsWith("/auth/staff-list")) {
+    return [
+      { id: 1, name: "General Manager", username: "admin", role: "ADMIN", status: "ACTIVE" },
+      { id: 2, name: "Executive Chef", username: "kitchen", role: "KITCHEN", status: "ACTIVE" },
+    ];
+  }
+
+  if (endpoint.startsWith("/auth/staff") && method === "POST") {
+    return { message: "Staff created successfully" };
+  }
+
+  // 10. RESTAURANT PROFILE & QR
+  if (endpoint.includes("/restaurants/")) {
+    return {
+      name: "Spicy Spoon",
+      slug: "spicy-spoon",
+      tagline: "Authentic Flavours. Smoked Tandoori. Warm Hospitality.",
+      address: "Tiruppur-Palladam road, Tamil Nadu",
+      phone: "+91 73958 77142",
+      tax_rate: 5.0,
+      service_charge_rate: 2.5,
+      qrCodeDataUrl: "data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='100' height='100'><rect width='100' height='100' fill='%23ff5722'/></svg>",
+      targetUrl: `${window.location.origin}/#/restaurant/spicy-spoon`,
+    };
+  }
+
+  if (endpoint.startsWith("/settings")) {
+    return {
+      name: "Spicy Spoon",
+      tax_rate: 5.0,
+      service_charge_rate: 2.5,
+    };
+  }
+
+  return { message: "Success" };
 }
 
 export const api = {

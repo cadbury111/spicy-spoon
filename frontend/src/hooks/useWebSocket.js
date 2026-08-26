@@ -58,7 +58,32 @@ export function useWebSocket(onEvent) {
   useEffect(() => {
     connect();
 
+    // Client event listener for standalone/hosted Vercel sync
+    const handleClientEvent = (e) => {
+      if (e?.detail && onEventRef.current) {
+        setLastMessage(e.detail);
+        onEventRef.current(e.detail);
+      }
+    };
+
+    const handleStorageEvent = (e) => {
+      if (e.key === "spicy_last_event" && e.newValue) {
+        try {
+          const parsed = JSON.parse(e.newValue);
+          if (parsed && onEventRef.current) {
+            setLastMessage(parsed);
+            onEventRef.current(parsed);
+          }
+        } catch (err) {}
+      }
+    };
+
+    window.addEventListener("spicy_ws_event", handleClientEvent);
+    window.addEventListener("storage", handleStorageEvent);
+
     return () => {
+      window.removeEventListener("spicy_ws_event", handleClientEvent);
+      window.removeEventListener("storage", handleStorageEvent);
       if (reconnectTimeoutRef.current) {
         clearTimeout(reconnectTimeoutRef.current);
       }
