@@ -619,7 +619,7 @@ async function handleClientFallback(endpoint, options = {}, originalError) {
       const existingBill = bills.find(
         (b) =>
           (sessionId && b.session_id === sessionId) ||
-          (tableNumber && (b.table_number === tableNumber || b.table_number === `T${tableNumber.replace(/^T/i, "")}`))
+          (!sessionId && b.status !== "PAID" && (b.table_number === tableNumber || b.table_number === `T${tableNumber.replace(/^T/i, "")}`))
       );
 
       if (existingBill) {
@@ -1092,6 +1092,9 @@ export const api = {
   // Orders (Multi-Round Dining)
   getOrders: (params = {}) => {
     return request(`/orders${buildQueryString(params)}`);
+  },
+  getActiveOrders: (params = {}) => {
+    return request(`/orders/active${buildQueryString(params)}`);
   },
   createOrder: (data) => request("/orders", { method: "POST", body: data }),
   updateOrderStatus: (id, status) => request(`/orders/${id}/status`, { method: "PUT", body: { status } }),

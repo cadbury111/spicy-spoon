@@ -82,6 +82,57 @@ router.get("/", (req, res) => {
   }
 });
 
+// Get Active Orders for Table / Session
+router.get("/active", (req, res) => {
+  try {
+    const { session_id, sessionId, table_id, tableId, table_number, tableNumber } = req.query;
+    const sId = session_id || sessionId;
+    const tNum = table_number || tableNumber;
+    const tId = table_id || tableId;
+
+    let queryStr = `
+      SELECT o.*, COALESCE(o.table_number, t.table_number) as resolved_table_number, t.section as table_section
+      FROM orders o
+      LEFT JOIN restaurant_tables t ON o.table_id = t.id
+      WHERE o.status NOT IN ('CANCELLED', 'COMPLETED')
+    `;
+    const params = [];
+
+    if (sId && sId !== "undefined" && sId !== "null") {
+      queryStr += " AND o.session_id = ?";
+      params.push(sId);
+    } else if (tNum && tNum !== "undefined" && tNum !== "null") {
+      const cleanNum = String(tNum).replace(/^Table\s*/i, "").trim();
+      queryStr += " AND (o.table_number = ? OR o.table_number = ? OR t.table_number = ? OR t.table_number = ?)";
+      params.push(cleanNum, `T${cleanNum.replace(/^T/i, "")}`, cleanNum, `T${cleanNum.replace(/^T/i, "")}`);
+    } else if (tId) {
+      queryStr += " AND o.table_id = ?";
+      params.push(Number(tId));
+    }
+
+    queryStr += " ORDER BY o.id DESC";
+
+    const orders = db.prepare(queryStr).all(...params);
+    const itemsQuery = db.prepare("SELECT * FROM order_items WHERE order_id = ?");
+
+    const ordersWithItems = orders.map((order) => {
+      const items = itemsQuery.all(order.id);
+      const tblNum = order.table_number || order.resolved_table_number || "T1";
+      return {
+        ...order,
+        table_number: tblNum,
+        tableNumber: tblNum,
+        items,
+      };
+    });
+
+    res.json(ordersWithItems);
+  } catch (error) {
+    console.error("Error fetching active orders:", error);
+    res.status(500).json({ message: "Failed to fetch active orders", error: error.message });
+  }
+});
+
 // Get single order by ID or order_number
 router.get("/:id", (req, res) => {
   try {

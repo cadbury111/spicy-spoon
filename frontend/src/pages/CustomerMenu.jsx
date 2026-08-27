@@ -150,9 +150,28 @@ function CustomerMenu() {
   const fetchActiveOrders = useCallback(async () => {
     try {
       const currentSessionId = activeSessionIdRef.current || localStorage.getItem(`spicy_session_${tableNumber}`);
+
+      // 1. Direct active orders query from backend
+      const activeRes = await api
+        .getActiveOrders({
+          table_number: tableNumber,
+          session_id: currentSessionId || undefined,
+        })
+        .catch(() => null);
+
+      if (Array.isArray(activeRes) && activeRes.length > 0) {
+        setActiveOrders(activeRes);
+        if (!activeSessionIdRef.current && activeRes[0].session_id) {
+          setActiveSessionId(activeRes[0].session_id);
+          localStorage.setItem(`spicy_session_${tableNumber}`, activeRes[0].session_id);
+        }
+        return;
+      }
+
+      // 2. Fallback to live bill orders if active
       const liveBill = await api.getLiveBill({ tableNumber, sessionId: currentSessionId }).catch(() => null);
       if (liveBill && liveBill.bill) {
-        if (liveBill.bill.status === "PAID") {
+        if (liveBill.bill.status === "PAID" && (!currentSessionId || liveBill.bill.session_id === currentSessionId)) {
           setActiveOrders([]);
           setActiveSessionId(null);
           localStorage.removeItem(`spicy_session_${tableNumber}`);
@@ -160,15 +179,23 @@ function CustomerMenu() {
           return;
         }
         if (liveBill.bill.orders && liveBill.bill.orders.length > 0) {
-          setActiveOrders(liveBill.bill.orders);
-          return;
+          const liveOrders = liveBill.bill.orders.filter((o) =>
+            ["ORDER_PLACED", "ACCEPTED", "PREPARING", "READY", "SERVED", "PAYMENT_PENDING"].includes(o.status)
+          );
+          if (liveOrders.length > 0) {
+            setActiveOrders(liveOrders);
+            return;
+          }
         }
       }
 
-      const orders = await api.getOrders({
-        table_number: tableNumber,
-        session_id: currentSessionId || undefined,
-      });
+      // 3. Fallback to getOrders filtered by ongoing status
+      const orders = await api
+        .getOrders({
+          table_number: tableNumber,
+          session_id: currentSessionId || undefined,
+        })
+        .catch(() => []);
 
       const ongoing = (orders || []).filter((o) =>
         ["ORDER_PLACED", "ACCEPTED", "PREPARING", "READY", "SERVED", "PAYMENT_PENDING"].includes(o.status)
@@ -327,8 +354,22 @@ function CustomerMenu() {
       const newOrder = res.order || res;
       const returnedSessionId = res.session_id || newOrder.session_id;
 
-      setActiveSessionId(returnedSessionId);
-      localStorage.setItem(`spicy_session_${tableNumber}`, returnedSessionId);
+      if (returnedSessionId) {
+        setActiveSessionId(returnedSessionId);
+        activeSessionIdRef.current = returnedSessionId;
+        localStorage.setItem(`spicy_session_${tableNumber}`, returnedSessionId);
+        localStorage.setItem("spicy_last_session", returnedSessionId);
+      }
+
+      // Immediately append/update active orders directly in state
+      if (newOrder && (newOrder.id || newOrder.order_number)) {
+        setActiveOrders((prev) => {
+          const filtered = prev.filter(
+            (o) => o.id !== newOrder.id && o.order_number !== newOrder.order_number
+          );
+          return [newOrder, ...filtered];
+        });
+      }
 
       setCart([]);
       setCartOpen(false);
