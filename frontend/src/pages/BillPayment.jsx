@@ -468,7 +468,7 @@ function BillPayment({ billId = null, tableParam = null, sessionParam = null, or
   return (
     <div className="bill-payment-page">
       <header className="bill-header">
-        <a href="#home" className="back-link">
+        <a href={`#/order?table=${bill?.table_number || targetTable || "T1"}`} className="back-link">
           <ArrowLeft size={18} />
           <span>Spicy Spoon</span>
         </a>
