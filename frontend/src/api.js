@@ -882,7 +882,13 @@ async function handleClientFallback(endpoint, options = {}, originalError) {
   // 7. MENU
   if (endpoint.startsWith("/menu")) {
     let menu = getLocalDemoData("spicy_demo_menu", fallbackMenu);
-    if (method === "GET") return menu;
+    if (method === "GET") {
+      return menu.map((item) => ({
+        ...item,
+        is_veg: item.is_veg !== undefined ? (Number(item.is_veg) === 1 ? 1 : 0) : (item.dietaryType === "VEG" ? 1 : 0),
+        dietaryType: item.dietaryType || (item.is_veg === 1 ? "VEG" : "NON_VEG"),
+      }));
+    }
 
     if (method === "POST") {
       const newDish = { id: Date.now(), ...body, is_available: 1 };

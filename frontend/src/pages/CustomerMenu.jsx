@@ -247,8 +247,9 @@ function CustomerMenu() {
           return false;
         }
       }
-      if (dietaryFilter === "VEG" && !item.is_veg) return false;
-      if (dietaryFilter === "NON_VEG" && item.is_veg) return false;
+      const isItemVeg = item.dietaryType === "VEG" || item.is_veg === 1 || item.is_veg === true;
+      if (dietaryFilter === "VEG" && !isItemVeg) return false;
+      if (dietaryFilter === "NON_VEG" && isItemVeg) return false;
       if (dietaryFilter === "SPICY" && !item.is_spicy) return false;
 
       if (searchQuery.trim()) {
@@ -515,7 +516,7 @@ function CustomerMenu() {
           >
             <span>4. Ready / Served</span>
           </div>
-          <div className={`progress-step ${latestOrder?.status === "PAYMENT_PENDING" ? "active" : ""}`}>
+          <div className={`progress-step ${["SERVED", "PAYMENT_PENDING"].includes(latestOrder?.status) ? "active" : ""}`}>
             <span>5. Settle Bill</span>
           </div>
         </div>
@@ -615,7 +616,7 @@ function CustomerMenu() {
                   <div className="dish-image-wrapper">
                     <img src={item.image} alt={item.name} loading="lazy" />
                     <div className="dish-badges">
-                      {item.is_veg ? (
+                      {item.dietaryType === "VEG" || item.is_veg === 1 || item.is_veg === true ? (
                         <span className="badge veg-badge" title="Vegetarian">
                           🟢 Veg
                         </span>

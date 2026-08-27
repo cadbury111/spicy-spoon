@@ -19,6 +19,7 @@ export const menuItems = [
       "Smoky, juicy chicken marinated in aromatic spices and grilled to perfection.",
     image: tandooriChicken,
     is_veg: 0,
+    dietaryType: "NON_VEG",
     is_spicy: 1,
   },
   {
@@ -30,6 +31,7 @@ export const menuItems = [
       "Tender chicken cooked in a rich, creamy and flavourful tomato butter sauce.",
     image: butterChicken,
     is_veg: 0,
+    dietaryType: "NON_VEG",
     is_spicy: 0,
   },
   {
@@ -41,6 +43,7 @@ export const menuItems = [
       "Fragrant basmati rice layered with perfectly spiced and tender chicken.",
     image: chickenBiryani,
     is_veg: 0,
+    dietaryType: "NON_VEG",
     is_spicy: 1,
   },
   {
@@ -52,6 +55,7 @@ export const menuItems = [
       "Fresh prawns tossed with bold spices for a fiery and unforgettable flavour.",
     image: prawnFry,
     is_veg: 0,
+    dietaryType: "NON_VEG",
     is_spicy: 1,
   },
   {
@@ -63,6 +67,7 @@ export const menuItems = [
       "Fresh fish grilled with herbs, spices and a perfect balance of smoky flavour.",
     image: grilledFish,
     is_veg: 0,
+    dietaryType: "NON_VEG",
     is_spicy: 0,
   },
   {
@@ -74,6 +79,7 @@ export const menuItems = [
       "Wok-tossed noodles with tender chicken, vegetables and signature seasonings.",
     image: chickenNoodles,
     is_veg: 0,
+    dietaryType: "NON_VEG",
     is_spicy: 0,
   },
   {
@@ -85,6 +91,7 @@ export const menuItems = [
       "Crispy chicken tossed with spicy chilli sauce and fresh vegetables.",
     image: chilliChicken,
     is_veg: 0,
+    dietaryType: "NON_VEG",
     is_spicy: 1,
   },
   {
@@ -96,6 +103,7 @@ export const menuItems = [
       "Soft paneer marinated in aromatic spices and grilled to perfection.",
     image: paneerTikka,
     is_veg: 1,
+    dietaryType: "VEG",
     is_spicy: 0,
   },
   {
@@ -107,6 +115,7 @@ export const menuItems = [
       "Fragrant rice wok-tossed with fresh vegetables and flavourful seasonings.",
     image: vegFriedRice,
     is_veg: 1,
+    dietaryType: "VEG",
     is_spicy: 0,
   },
   {
@@ -118,6 +127,7 @@ export const menuItems = [
       "Soft milk dumplings soaked in warm and delicious sugar syrup.",
     image: gulabJamun,
     is_veg: 1,
+    dietaryType: "VEG",
     is_spicy: 0,
   },
 ];

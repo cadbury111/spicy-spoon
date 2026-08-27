@@ -21,7 +21,10 @@ router.get("/", (req, res) => {
 
     queryStr += " ORDER BY category ASC, id ASC";
 
-    const items = db.prepare(queryStr).all(...params);
+    const items = db.prepare(queryStr).all(...params).map((item) => ({
+      ...item,
+      dietaryType: item.is_veg === 1 ? "VEG" : "NON_VEG",
+    }));
     res.json(items);
   } catch (error) {
     console.error("Error fetching menu:", error);
@@ -36,7 +39,10 @@ router.get("/:id", (req, res) => {
     if (!item) {
       return res.status(404).json({ message: "Menu item not found" });
     }
-    res.json(item);
+    res.json({
+      ...item,
+      dietaryType: item.is_veg === 1 ? "VEG" : "NON_VEG",
+    });
   } catch (error) {
     res.status(500).json({ message: "Error fetching menu item", error: error.message });
   }

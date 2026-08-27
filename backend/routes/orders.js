@@ -260,6 +260,7 @@ router.post("/", (req, res) => {
     };
 
     broadcast("NEW_ORDER", fullOrder);
+    broadcast("ORDER_CREATED", fullOrder);
     broadcast("TABLE_STATUS_UPDATED", updatedTable);
 
     res.status(201).json({
@@ -348,6 +349,9 @@ const handleUpdateOrderStatus = (req, res) => {
     };
 
     broadcast("ORDER_STATUS_UPDATED", fullOrder);
+    if (canonicalStatus === "ACCEPTED") broadcast("ORDER_ACCEPTED", fullOrder);
+    if (canonicalStatus === "SERVED") broadcast("ORDER_SERVED", fullOrder);
+    if (canonicalStatus === "COMPLETED") broadcast("ORDER_COMPLETED", fullOrder);
     broadcast("TABLE_STATUS_UPDATED", updatedTable);
 
     res.json({
