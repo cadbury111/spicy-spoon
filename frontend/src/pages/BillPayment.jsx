@@ -138,7 +138,29 @@ function BillPayment({ billId = null, tableParam = null, sessionParam = null }) 
     [targetTable, selectedMethod]
   );
 
-  // 1. Fetch or Generate Live Bill
+  // 1. Initiate Payment Method (UPI QR / Intent / Cash)
+  const initiatePaymentMethod = useCallback(async (method, targetBillId) => {
+    setSelectedMethod(method);
+    const bId = targetBillId || billRef.current?.id;
+    if (!bId) return;
+
+    try {
+      const idempotencyKey = `PAY-${bId}-${method}-${Date.now()}`;
+      const res = await api.createPayment({
+        bill_id: bId,
+        payment_method: method,
+        idempotency_key: idempotencyKey,
+      });
+      setPaymentData({ ...res, idempotencyKey });
+      if (method === "CASH") {
+        setCashRequested(true);
+      }
+    } catch (err) {
+      console.error("Payment method creation error:", err);
+    }
+  }, []);
+
+  // 2. Fetch or Generate Live Bill
   const fetchLiveBill = useCallback(async () => {
     try {
       setLoading(true);
@@ -190,7 +212,7 @@ function BillPayment({ billId = null, tableParam = null, sessionParam = null }) 
     } finally {
       setLoading(false);
     }
-  }, [billId, targetTable, targetSession, discountCode]);
+  }, [billId, targetTable, targetSession, discountCode, handlePaymentSuccess, initiatePaymentMethod]);
 
   useEffect(() => {
     fetchLiveBill();
@@ -294,28 +316,6 @@ function BillPayment({ billId = null, tableParam = null, sessionParam = null }) 
       if (pollTimerRef.current) clearInterval(pollTimerRef.current);
     };
   }, [paymentSuccess, bill?.id, selectedMethod, handlePaymentSuccess, bill?.items]);
-
-  // 2. Initiate Payment Method (UPI QR / Intent / Cash)
-  const initiatePaymentMethod = async (method, targetBillId) => {
-    setSelectedMethod(method);
-    const bId = targetBillId || bill?.id;
-    if (!bId) return;
-
-    try {
-      const idempotencyKey = `PAY-${bId}-${method}-${Date.now()}`;
-      const res = await api.createPayment({
-        bill_id: bId,
-        payment_method: method,
-        idempotency_key: idempotencyKey,
-      });
-      setPaymentData({ ...res, idempotencyKey });
-      if (method === "CASH") {
-        setCashRequested(true);
-      }
-    } catch (err) {
-      console.error("Payment method creation error:", err);
-    }
-  };
 
   // 3. Apply Discount Coupon Code
   const handleApplyCoupon = async () => {

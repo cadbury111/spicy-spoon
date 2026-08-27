@@ -1,4 +1,4 @@
-import { useEffect, useState, useMemo, useCallback } from "react";
+import { useEffect, useState, useMemo, useCallback, useRef } from "react";
 import confetti from "canvas-confetti";
 import {
   Utensils,
@@ -39,6 +39,18 @@ function CustomerMenu() {
   const [dietaryFilter, setDietaryFilter] = useState("ALL"); // ALL, VEG, NON_VEG, SPICY
   const [searchQuery, setSearchQuery] = useState("");
   const [loadingMenu, setLoadingMenu] = useState(true);
+
+  // Confetti helper
+  const triggerConfetti = useCallback(() => {
+    try {
+      confetti({
+        particleCount: 80,
+        spread: 70,
+        origin: { y: 0.6 },
+        colors: ["#ff4500", "#ff8c00", "#ffd700", "#22c55e"],
+      });
+    } catch (e) {}
+  }, []);
 
   // Table state
   const [tableNumber, setTableNumber] = useState(() => {
@@ -302,17 +314,6 @@ function CustomerMenu() {
     } finally {
       setIsPlacingOrder(false);
     }
-  };
-
-  const triggerConfetti = () => {
-    try {
-      confetti({
-        particleCount: 80,
-        spread: 70,
-        origin: { y: 0.6 },
-        colors: ["#ff4500", "#ff8c00", "#ffd700", "#22c55e"],
-      });
-    } catch (e) {}
   };
 
   const formatTableDisplay = (num) => {
