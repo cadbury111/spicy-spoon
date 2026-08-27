@@ -368,53 +368,59 @@ function CustomerMenu() {
         </div>
 
         <div className="header-right">
-          {/* Table Switcher Badge */}
-          <button className="table-status-pill-btn" onClick={() => setIsChangingTable(true)} title="Click to change table">
-            <MapPin size={14} />
+          {/* Table Selector Chip */}
+          <div className="table-badge" onClick={() => setIsChangingTable(true)}>
+            <Utensils size={16} />
             <span>{formatTableDisplay(tableNumber)}</span>
-            <ChevronRight size={14} />
-          </button>
+            <span className="change-hint">Switch</span>
+          </div>
 
           {/* Cart Trigger */}
           <button className="cart-trigger-btn" onClick={() => setCartOpen(true)}>
             <ShoppingBag size={20} />
-            {cartCount > 0 && <span className="cart-badge-count">{cartCount}</span>}
-            <span className="cart-total-pill">₹{cartEstimatedTotal.toFixed(2)}</span>
+            {cartCount > 0 && <span className="cart-counter-badge">{cartCount}</span>}
           </button>
         </div>
       </header>
 
-      {/* Settlement Alert Modal */}
+      {/* REAL-TIME SETTLEMENT CELEBRATION NOTIFICATION */}
       {settlementNotification && (
         <div className="menu-settlement-modal-overlay">
           <div className="menu-settlement-modal">
-            <div className="settle-bell-icon">
-              <CheckCircle2 size={48} />
+            <div className="settle-success-icon-wrap">
+              <CheckCircle2 size={52} className="settle-check-pulse" />
             </div>
-            <h3>Payment Received & Table Settled! ✓</h3>
-            <p>
-              Your bill <strong>#{settlementNotification.billNumber}</strong> for {formatTableDisplay(settlementNotification.tableNumber)} has been paid in full (<strong>₹{settlementNotification.amount}</strong>).
+            <h2>✓ Payment Successful</h2>
+            <div className="settle-amount-highlight">
+              <span>₹{settlementNotification.amount} Received</span>
+            </div>
+            <p className="settle-congrats-text">
+              Your bill has been settled successfully for {formatTableDisplay(tableNumber)}.
             </p>
-            <div className="settle-modal-actions">
-              <button
-                className="btn-modal-receipt"
-                onClick={() => {
-                  window.location.hash = `#/bill?table=${tableNumber}`;
-                }}
+            <div className="settle-meta-pill">
+              <span>Invoice #{settlementNotification.billNumber}</span>
+            </div>
+            <div className="menu-settle-actions">
+              <a
+                href={`#/bill?table=${tableNumber}`}
+                className="btn-view-receipt-modal"
               >
-                View Digital Receipt
-              </button>
-              <button className="btn-modal-close" onClick={() => setSettlementNotification(null)}>
-                Dismiss
+                <Receipt size={16} /> View Digital Receipt →
+              </a>
+              <button
+                className="btn-dismiss-modal"
+                onClick={() => setSettlementNotification(null)}
+              >
+                Done
               </button>
             </div>
           </div>
         </div>
       )}
 
-      {/* Table & Session Notice Strip */}
-      <section className="dining-session-strip">
-        <div className="strip-left">
+      {/* TABLE DETECTED WELCOME BANNER */}
+      <section className="table-welcome-strip">
+        <div className="strip-content">
           <CheckCircle2 size={18} className="strip-check" />
           <span>
             Dining at <strong>{formatTableDisplay(tableNumber)}</strong>. Multiple order rounds will accumulate to your
