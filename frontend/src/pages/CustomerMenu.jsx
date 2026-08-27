@@ -25,6 +25,7 @@ import {
   Check,
   Tag,
   Info,
+  MapPin,
 } from "lucide-react";
 import { api } from "../api";
 import { useWebSocket } from "../hooks/useWebSocket";
