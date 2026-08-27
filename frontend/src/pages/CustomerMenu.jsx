@@ -66,12 +66,32 @@ function CustomerMenu() {
 
   // Active Session & Multi-round orders
   const [activeSessionId, setActiveSessionId] = useState(() => {
-    return localStorage.getItem(`spicy_session_${tableNumber}`) || null;
+    const params = new URLSearchParams(window.location.hash.split("?")[1] || window.location.search);
+    return (
+      params.get("session") ||
+      localStorage.getItem(`spicy_session_${tableNumber}`) ||
+      localStorage.getItem("spicy_last_session") ||
+      null
+    );
   });
   const activeSessionIdRef = useRef(activeSessionId);
   useEffect(() => {
     activeSessionIdRef.current = activeSessionId;
   }, [activeSessionId]);
+
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.hash.split("?")[1] || window.location.search);
+    const sessionFromUrl = params.get("session");
+    if (sessionFromUrl) {
+      setActiveSessionId(sessionFromUrl);
+      localStorage.setItem(`spicy_session_${tableNumber}`, sessionFromUrl);
+    } else {
+      const stored = localStorage.getItem(`spicy_session_${tableNumber}`);
+      if (stored) {
+        setActiveSessionId(stored);
+      }
+    }
+  }, [tableNumber]);
 
   const [activeOrders, setActiveOrders] = useState([]);
 
@@ -320,7 +340,15 @@ function CustomerMenu() {
     return String(num).startsWith("T") ? num : `Table ${num}`;
   };
 
-  const latestOrder = activeOrders[0];
+  const latestOrder =
+    activeOrders[0] ||
+    (activeSessionId
+      ? {
+          status: "ORDER_PLACED",
+          order_number: "ORD-LIVE",
+          session_id: activeSessionId,
+        }
+      : null);
 
   return (
     <div className="customer-menu-container">
@@ -339,80 +367,74 @@ function CustomerMenu() {
         </div>
 
         <div className="header-right">
-          {/* Table Selector Chip */}
-          <div className="table-badge" onClick={() => setIsChangingTable(true)}>
-            <Utensils size={16} />
+          {/* Table Switcher Badge */}
+          <button className="table-status-pill-btn" onClick={() => setIsChangingTable(true)} title="Click to change table">
+            <MapPin size={14} />
             <span>{formatTableDisplay(tableNumber)}</span>
-            <span className="change-hint">Switch</span>
-          </div>
+            <ChevronRight size={14} />
+          </button>
 
           {/* Cart Trigger */}
           <button className="cart-trigger-btn" onClick={() => setCartOpen(true)}>
             <ShoppingBag size={20} />
-            {cartCount > 0 && <span className="cart-counter-badge">{cartCount}</span>}
+            {cartCount > 0 && <span className="cart-badge-count">{cartCount}</span>}
+            <span className="cart-total-pill">₹{cartEstimatedTotal.toFixed(2)}</span>
           </button>
         </div>
       </header>
 
-      {/* REAL-TIME SETTLEMENT CELEBRATION NOTIFICATION */}
+      {/* Settlement Alert Modal */}
       {settlementNotification && (
         <div className="menu-settlement-modal-overlay">
           <div className="menu-settlement-modal">
-            <div className="settle-success-icon-wrap">
-              <CheckCircle2 size={52} className="settle-check-pulse" />
+            <div className="settle-bell-icon">
+              <CheckCircle2 size={48} />
             </div>
-            <h2>✓ Payment Successful</h2>
-            <div className="settle-amount-highlight">
-              <span>₹{settlementNotification.amount} Received</span>
-            </div>
-            <p className="settle-congrats-text">
-              Your bill has been settled successfully for {formatTableDisplay(tableNumber)}.
+            <h3>Payment Received & Table Settled! ✓</h3>
+            <p>
+              Your bill <strong>#{settlementNotification.billNumber}</strong> for {formatTableDisplay(settlementNotification.tableNumber)} has been paid in full (<strong>₹{settlementNotification.amount}</strong>).
             </p>
-            <div className="settle-meta-pill">
-              <span>Invoice #{settlementNotification.billNumber}</span>
-            </div>
-            <div className="menu-settle-actions">
-              <a
-                href={`#/bill?table=${tableNumber}`}
-                className="btn-view-receipt-modal"
-              >
-                <Receipt size={16} /> View Digital Receipt →
-              </a>
+            <div className="settle-modal-actions">
               <button
-                className="btn-dismiss-modal"
-                onClick={() => setSettlementNotification(null)}
+                className="btn-modal-receipt"
+                onClick={() => {
+                  window.location.hash = `#/bill?table=${tableNumber}`;
+                }}
               >
-                Done
+                View Digital Receipt
+              </button>
+              <button className="btn-modal-close" onClick={() => setSettlementNotification(null)}>
+                Dismiss
               </button>
             </div>
           </div>
         </div>
       )}
 
-      {/* TABLE DETECTED WELCOME BANNER */}
-      <section className="table-welcome-strip">
-        <div className="strip-content">
+      {/* Table & Session Notice Strip */}
+      <section className="dining-session-strip">
+        <div className="strip-left">
           <CheckCircle2 size={18} className="strip-check" />
           <span>
             Dining at <strong>{formatTableDisplay(tableNumber)}</strong>. Multiple order rounds will accumulate to your
             live table bill.
           </span>
         </div>
-        {activeOrders.length > 0 && (
+        {(activeOrders.length > 0 || activeSessionId) && (
           <button
             className="btn-strip-bill"
             onClick={() => {
-              window.location.hash = `#/bill?table=${tableNumber}&session=${activeSessionId}`;
+              window.location.hash = `#/bill?table=${tableNumber}&session=${activeSessionId || latestOrder?.session_id || ""}`;
             }}
           >
             <Receipt size={15} />
-            <span>Live Bill ({activeOrders.length} {activeOrders.length === 1 ? "Round" : "Rounds"})</span>
+            <span>Live Bill ({activeOrders.length || 1} {activeOrders.length <= 1 ? "Round" : "Rounds"})</span>
           </button>
         )}
       </section>
 
       {/* ACTIVE ORDERS TRACKER TIMELINE */}
-      {activeOrders.length > 0 && latestOrder && (
+      {(activeOrders.length > 0 || activeSessionId) && latestOrder && (
         <section className="active-order-banner">
           <div className="order-banner-content">
             <div className="order-banner-left">
@@ -421,7 +443,7 @@ function CustomerMenu() {
               </div>
               <div>
                 <p className="order-number-text">
-                  ACTIVE SESSION: {activeSessionId || latestOrder.order_number} · ROUND {activeOrders.length}
+                  ACTIVE SESSION: {activeSessionId || latestOrder.session_id || latestOrder.order_number} · ROUND {activeOrders.length || 1}
                 </p>
                 <h4 className="order-stage-title">
                   {latestOrder.status === "ORDER_PLACED" && "⏳ Order Placed & Sent to Kitchen"}
@@ -438,7 +460,7 @@ function CustomerMenu() {
               <button
                 className="view-bill-btn"
                 onClick={() => {
-                  window.location.hash = `#/bill?table=${tableNumber}&session=${activeSessionId}`;
+                  window.location.hash = `#/bill?table=${tableNumber}&session=${activeSessionId || latestOrder?.session_id || ""}`;
                 }}
               >
                 <Receipt size={16} />
