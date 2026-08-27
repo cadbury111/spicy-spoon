@@ -816,30 +816,9 @@ function BillPayment({ billId = null, tableParam = null, sessionParam = null, or
                 </div>
               )}
 
-              {/* 2. Card Payment (Dedicated Form with Live Virtual Card Preview) */}
+              {/* 2. Card Payment (Dedicated Form) */}
               {selectedMethod === "CARD" && (
                 <div className="card-checkout-box">
-                  {/* Visual Credit Card Preview */}
-                  <div className="virtual-card-preview">
-                    <div className="card-top-row">
-                      <span className="card-chip-icon">💳</span>
-                      <span className="card-brand-label">VISA / MASTERCARD</span>
-                    </div>
-                    <div className="card-number-display">
-                      {cardForm.cardNumber || "•••• •••• •••• ••••"}
-                    </div>
-                    <div className="card-bottom-row">
-                      <div className="card-holder-block">
-                        <small>CARDHOLDER</small>
-                        <span>{cardForm.cardHolder || "DINING GUEST"}</span>
-                      </div>
-                      <div className="card-expiry-block">
-                        <small>EXPIRES</small>
-                        <span>{cardForm.expiry || "MM/YY"}</span>
-                      </div>
-                    </div>
-                  </div>
-
                   <div className="card-input-group">
                     <label>Cardholder Name</label>
                     <input
