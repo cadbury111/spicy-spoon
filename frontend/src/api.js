@@ -79,88 +79,7 @@ const DEFAULT_TABLES = [
   { id: 12, table_number: "T12", capacity: 10, section: "VIP Lounge", status: "AVAILABLE" },
 ];
 
-const INITIAL_DEMO_ORDERS = [
-  {
-    id: 101,
-    order_number: "ORD-8421",
-    session_id: "SESSION-T3-8421",
-    table_number: "T3",
-    tableNumber: "T3",
-    round_number: 1,
-    customer_name: "Anita & Family",
-    status: "ORDER_PLACED",
-    subtotal: 1047,
-    tax: 52.35,
-    service_charge: 26.18,
-    discount: 0,
-    total: 1125.53,
-    items: [
-      { id: 1, menu_item_id: 1, name: "Tandoori Chicken (Full)", unit_price: 649, quantity: 1, total_price: 649, special_instruction: "Extra spicy with mint chutney" },
-      { id: 2, menu_item_id: 2, name: "Butter Chicken", unit_price: 398, quantity: 1, total_price: 398, special_instruction: "Less sweet, rich gravy" }
-    ],
-    created_at: new Date(Date.now() - 3 * 60000).toISOString()
-  },
-  {
-    id: 102,
-    order_number: "ORD-9134",
-    session_id: "SESSION-T5-9134",
-    table_number: "T5",
-    tableNumber: "T5",
-    round_number: 1,
-    customer_name: "Rahul Sharma",
-    status: "ACCEPTED",
-    subtotal: 678,
-    tax: 33.9,
-    service_charge: 16.95,
-    discount: 0,
-    total: 728.85,
-    items: [
-      { id: 3, menu_item_id: 3, name: "Chicken Biryani", unit_price: 349, quantity: 1, total_price: 349, special_instruction: "Double salan on the side" },
-      { id: 5, menu_item_id: 5, name: "Paneer Tikka", unit_price: 329, quantity: 1, total_price: 329, special_instruction: "Well roasted" }
-    ],
-    created_at: new Date(Date.now() - 8 * 60000).toISOString()
-  },
-  {
-    id: 103,
-    order_number: "ORD-7622",
-    session_id: "SESSION-T1-7622",
-    table_number: "T1",
-    tableNumber: "T1",
-    round_number: 1,
-    customer_name: "Vikram Mehta",
-    status: "PREPARING",
-    subtotal: 828,
-    tax: 41.4,
-    service_charge: 20.7,
-    discount: 0,
-    total: 890.1,
-    items: [
-      { id: 7, menu_item_id: 7, name: "Grilled Fish", unit_price: 499, quantity: 1, total_price: 499, special_instruction: "Crispy skin, lemon butter sauce" },
-      { id: 8, menu_item_id: 8, name: "Chicken Hakka Noodles", unit_price: 329, quantity: 1, total_price: 329, special_instruction: "Add fried garlic" }
-    ],
-    created_at: new Date(Date.now() - 14 * 60000).toISOString()
-  },
-  {
-    id: 104,
-    order_number: "ORD-6190",
-    session_id: "SESSION-T7-6190",
-    table_number: "T7",
-    tableNumber: "T7",
-    round_number: 2,
-    customer_name: "Pooja Hegde",
-    status: "READY",
-    subtotal: 718,
-    tax: 35.9,
-    service_charge: 17.95,
-    discount: 0,
-    total: 771.85,
-    items: [
-      { id: 4, menu_item_id: 4, name: "Prawn Fry", unit_price: 519, quantity: 1, total_price: 519, special_instruction: "Garnish with curry leaves" },
-      { id: 6, menu_item_id: 6, name: "Gulab Jamun (2 Pcs)", unit_price: 199, quantity: 1, total_price: 199, special_instruction: "Serve piping hot" }
-    ],
-    created_at: new Date(Date.now() - 20 * 60000).toISOString()
-  }
-];
+const INITIAL_DEMO_ORDERS = [];
 
 const INITIAL_DEMO_BOOKINGS = [
   {
@@ -608,7 +527,7 @@ async function handleClientFallback(endpoint, options = {}, originalError) {
     if (method === "GET" && (endpoint.startsWith("/bills/live") || endpoint.match(/^\/bills\/\d+$/))) {
       if (endpoint.match(/^\/bills\/\d+$/)) {
         const bId = parseInt(endpoint.replace("/bills/", ""), 10);
-        const found = bills.find((b) => b.id === bId) || bills[0] || null;
+        const found = bills.find((b) => b.id === bId) || null;
         return found;
       }
 
@@ -676,7 +595,11 @@ async function handleClientFallback(endpoint, options = {}, originalError) {
           o.table_number === `T${tableNumber.replace(/^T/i, "")}`
       );
 
-      const subtotal = sessionOrders.length > 0 ? sessionOrders.reduce((sum, o) => sum + (o.subtotal || 0), 0) : 897;
+      if (sessionOrders.length === 0) {
+        return { bill: null, session_id: sessionId, message: "No active orders found for this table." };
+      }
+
+      const subtotal = sessionOrders.reduce((sum, o) => sum + (o.subtotal || 0), 0);
 
       const discountRate = body.discount_code === "SPICY10" || body.discount_code === "WELCOME10" ? 0.1 : 0;
       const discountAmount = Math.round(subtotal * discountRate * 100) / 100;
@@ -741,18 +664,17 @@ async function handleClientFallback(endpoint, options = {}, originalError) {
     if (endpoint.includes("create")) {
       const bills = getLocalDemoData("spicy_demo_bills", []);
       const billId = body.bill_id || body.billId;
-      const targetBill = bills.find((b) => b.id === billId) || bills[0] || {
-        id: Date.now(),
-        bill_number: "INV-2026-8812",
-        grand_total: 964.28,
-        table_number: "T1",
-      };
+      const targetBill = bills.find((b) => b.id === billId) || null;
+
+      if (!targetBill) {
+        throw new Error("Bill not found for payment creation");
+      }
 
       const txn = `TXN-${Date.now().toString().slice(-8)}`;
       const upiVpa = "spicyspoon@upi";
       const restaurantName = encodeURIComponent("Spicy Spoon Restaurant");
       const note = encodeURIComponent(`Bill ${targetBill.bill_number}`);
-      const amountStr = Number(targetBill.grand_total || 897).toFixed(2);
+      const amountStr = Number(targetBill.grand_total).toFixed(2);
       const upiIntentUrl = `upi://pay?pa=${upiVpa}&pn=${restaurantName}&am=${amountStr}&cu=INR&tn=${note}&tr=${txn}`;
 
       const upiQrCode = await generateQrDataUrl(upiIntentUrl);
@@ -806,10 +728,15 @@ async function handleClientFallback(endpoint, options = {}, originalError) {
       const billId = body.bill_id;
       const isCash = endpoint.includes("cash-confirm");
 
-      bills = bills.map((b) => (b.id === billId || !billId ? { ...b, status: "PAID", payment_method: isCash ? "CASH" : "ONLINE" } : b));
+      const targetBill = bills.find((b) => b.id === billId) || null;
+      if (!targetBill) {
+        throw new Error("Bill not found for verification");
+      }
+
+      bills = bills.map((b) => (b.id === targetBill.id ? { ...b, status: "PAID", payment_method: isCash ? "CASH" : "ONLINE" } : b));
       setLocalDemoData("spicy_demo_bills", bills);
 
-      const paidBill = bills.find((b) => b.id === billId) || bills[0] || { grand_total: 964.28, bill_number: "INV-2026-PAID" };
+      const paidBill = { ...targetBill, status: "PAID", payment_method: isCash ? "CASH" : "ONLINE" };
       const tableNumber = paidBill.table_number || "T1";
 
       // Release table back to AVAILABLE

@@ -168,42 +168,14 @@ function CustomerMenu() {
         return;
       }
 
-      // 2. Fallback to live bill orders if active
-      const liveBill = await api.getLiveBill({ tableNumber, sessionId: currentSessionId }).catch(() => null);
-      if (liveBill && liveBill.bill) {
-        if (liveBill.bill.status === "PAID" && (!currentSessionId || liveBill.bill.session_id === currentSessionId)) {
-          setActiveOrders([]);
-          setActiveSessionId(null);
-          localStorage.removeItem(`spicy_session_${tableNumber}`);
-          localStorage.removeItem(`spicy_order_${tableNumber}`);
-          return;
-        }
-        if (liveBill.bill.orders && liveBill.bill.orders.length > 0) {
-          const liveOrders = liveBill.bill.orders.filter((o) =>
-            ["ORDER_PLACED", "ACCEPTED", "PREPARING", "READY", "SERVED", "PAYMENT_PENDING"].includes(o.status)
-          );
-          if (liveOrders.length > 0) {
-            setActiveOrders(liveOrders);
-            return;
-          }
-        }
-      }
-
-      // 3. Fallback to getOrders filtered by ongoing status
-      const orders = await api
-        .getOrders({
-          table_number: tableNumber,
-          session_id: currentSessionId || undefined,
-        })
-        .catch(() => []);
-
-      const ongoing = (orders || []).filter((o) =>
-        ["ORDER_PLACED", "ACCEPTED", "PREPARING", "READY", "SERVED", "PAYMENT_PENDING"].includes(o.status)
-      );
-
-      setActiveOrders(ongoing);
+      // If no active orders exist, clear state and any stale session
+      setActiveOrders([]);
+      setActiveSessionId(null);
+      localStorage.removeItem(`spicy_session_${tableNumber}`);
+      localStorage.removeItem("spicy_last_session");
     } catch (err) {
       console.warn("Error fetching active orders:", err);
+      setActiveOrders([]);
     }
   }, [tableNumber]);
 
@@ -465,7 +437,7 @@ function CustomerMenu() {
             live table bill.
           </span>
         </div>
-        {(activeOrders.length > 0 || activeSessionId) && (
+        {activeOrders.length > 0 && (
           <button
             className="btn-strip-bill"
             onClick={() => {
@@ -473,7 +445,7 @@ function CustomerMenu() {
             }}
           >
             <Receipt size={15} />
-            <span>Live Bill ({activeOrders.length || 1} {activeOrders.length <= 1 ? "Round" : "Rounds"})</span>
+            <span>Live Bill ({activeOrders.length} {activeOrders.length === 1 ? "Round" : "Rounds"})</span>
           </button>
         )}
       </section>
