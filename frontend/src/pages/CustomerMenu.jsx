@@ -56,6 +56,11 @@ function CustomerMenu() {
   const [activeSessionId, setActiveSessionId] = useState(() => {
     return localStorage.getItem(`spicy_session_${tableNumber}`) || null;
   });
+  const activeSessionIdRef = useRef(activeSessionId);
+  useEffect(() => {
+    activeSessionIdRef.current = activeSessionId;
+  }, [activeSessionId]);
+
   const [activeOrders, setActiveOrders] = useState([]);
 
   // Cart state
@@ -107,7 +112,8 @@ function CustomerMenu() {
   // 2. Fetch Active Multi-round Orders
   const fetchActiveOrders = useCallback(async () => {
     try {
-      const liveBill = await api.getLiveBill({ tableNumber, sessionId: activeSessionId }).catch(() => null);
+      const currentSessionId = activeSessionIdRef.current || localStorage.getItem(`spicy_session_${tableNumber}`);
+      const liveBill = await api.getLiveBill({ tableNumber, sessionId: currentSessionId }).catch(() => null);
       if (liveBill && liveBill.bill) {
         if (liveBill.bill.status === "PAID") {
           setActiveOrders([]);
@@ -124,7 +130,7 @@ function CustomerMenu() {
 
       const orders = await api.getOrders({
         table_number: tableNumber,
-        session_id: activeSessionId || undefined,
+        session_id: currentSessionId || undefined,
       });
 
       const ongoing = (orders || []).filter((o) =>
@@ -135,7 +141,7 @@ function CustomerMenu() {
     } catch (err) {
       console.warn("Error fetching active orders:", err);
     }
-  }, [tableNumber, activeSessionId]);
+  }, [tableNumber]);
 
   useEffect(() => {
     fetchMenu();

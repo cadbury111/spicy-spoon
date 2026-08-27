@@ -592,19 +592,81 @@ async function handleClientFallback(endpoint, options = {}, originalError) {
       return bills;
     }
 
-    if (endpoint.startsWith("/bills/live") || endpoint.startsWith("/bills/generate") || method === "POST") {
+    // 4a. Live Bill Status Lookup (READ-ONLY GET - NEVER MUTATE OR DISPATCH EVENTS)
+    if (method === "GET" && (endpoint.startsWith("/bills/live") || endpoint.match(/^\/bills\/\d+$/))) {
+      if (endpoint.match(/^\/bills\/\d+$/)) {
+        const bId = parseInt(endpoint.replace("/bills/", ""), 10);
+        const found = bills.find((b) => b.id === bId) || bills[0] || null;
+        return found;
+      }
+
       const urlObj = new URL(`http://dummy${endpoint}`);
-      const tableNumber = (urlObj.searchParams.get("tableNumber") || body.tableNumber || "T1").replace(/^Table\s*/i, "").trim();
-      const sessionId = urlObj.searchParams.get("sessionId") || body.session_id || `SESSION-${tableNumber}-DEMO`;
+      const tableNumber = (urlObj.searchParams.get("tableNumber") || "T1").replace(/^Table\s*/i, "").trim();
+      const sessionId = urlObj.searchParams.get("sessionId");
+
+      const existingBill = bills.find(
+        (b) =>
+          (sessionId && b.session_id === sessionId) ||
+          (tableNumber && (b.table_number === tableNumber || b.table_number === `T${tableNumber.replace(/^T/i, "")}`))
+      );
+
+      if (existingBill) {
+        return { bill: existingBill, session_id: existingBill.session_id };
+      }
 
       const allOrders = getLocalDemoData("spicy_demo_orders", INITIAL_DEMO_ORDERS);
-      const sessionOrders = allOrders.filter((o) => o.session_id === sessionId || o.table_number === tableNumber || o.tableNumber === tableNumber);
+      const sessionOrders = allOrders.filter(
+        (o) =>
+          (sessionId && o.session_id === sessionId) ||
+          (tableNumber && (o.table_number === tableNumber || o.tableNumber === tableNumber))
+      );
 
-      const subtotal = sessionOrders.length > 0
-        ? sessionOrders.reduce((sum, o) => sum + (o.subtotal || 0), 0)
-        : 897;
+      if (sessionOrders.length === 0) {
+        return { bill: null, session_id: sessionId || `SESSION-${tableNumber}-DEMO` };
+      }
 
-      const discountRate = (body.discount_code === "SPICY10" || body.discount_code === "WELCOME10") ? 0.1 : 0;
+      const subtotal = sessionOrders.reduce((sum, o) => sum + (o.subtotal || 0), 0);
+      const tax = Math.round(subtotal * 0.05 * 100) / 100;
+      const service = Math.round(subtotal * 0.025 * 100) / 100;
+      const grandTotal = Math.round((subtotal + tax + service) * 100) / 100;
+
+      const previewBill = {
+        id: Date.now(),
+        bill_number: `INV-2026-${Math.floor(10000 + Math.random() * 90000)}`,
+        session_id: sessionId || `SESSION-${tableNumber}-DEMO`,
+        table_number: tableNumber,
+        subtotal,
+        discount: 0,
+        tax,
+        service_charge: service,
+        grand_total: grandTotal,
+        status: "UNPAID",
+        payment_method: null,
+        created_at: new Date().toISOString(),
+        orders: sessionOrders,
+        items: sessionOrders.flatMap((o) => o.items || []),
+      };
+
+      return { bill: previewBill, session_id: sessionId || `SESSION-${tableNumber}-DEMO` };
+    }
+
+    // 4b. Explicit Bill Generation (POST - Mutates database and broadcasts event)
+    if (method === "POST" && (endpoint.startsWith("/bills/generate") || endpoint === "/bills")) {
+      const tableNumber = (body.tableNumber || body.table_number || "T1").replace(/^Table\s*/i, "").trim();
+      const sessionId = body.session_id || body.sessionId || `SESSION-${tableNumber}-${Date.now().toString().slice(-6)}`;
+
+      const allOrders = getLocalDemoData("spicy_demo_orders", INITIAL_DEMO_ORDERS);
+      const sessionOrders = allOrders.filter(
+        (o) =>
+          o.session_id === sessionId ||
+          o.table_number === tableNumber ||
+          o.tableNumber === tableNumber ||
+          o.table_number === `T${tableNumber.replace(/^T/i, "")}`
+      );
+
+      const subtotal = sessionOrders.length > 0 ? sessionOrders.reduce((sum, o) => sum + (o.subtotal || 0), 0) : 897;
+
+      const discountRate = body.discount_code === "SPICY10" || body.discount_code === "WELCOME10" ? 0.1 : 0;
       const discountAmount = Math.round(subtotal * discountRate * 100) / 100;
       const discountedSubtotal = subtotal - discountAmount;
 
@@ -635,7 +697,11 @@ async function handleClientFallback(endpoint, options = {}, originalError) {
       setLocalDemoData("spicy_demo_bills", bills);
 
       // Update table to PAYMENT_PENDING
-      tables = tables.map((t) => (t.table_number === tableNumber ? { ...t, status: "PAYMENT_PENDING" } : t));
+      tables = tables.map((t) =>
+        t.table_number === tableNumber || t.table_number === `T${tableNumber.replace(/^T/i, "")}`
+          ? { ...t, status: "PAYMENT_PENDING" }
+          : t
+      );
       setLocalDemoData("spicy_demo_tables", tables);
 
       dispatchClientEvent("BILL_GENERATED", liveBill);

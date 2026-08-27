@@ -134,16 +134,21 @@ export function useWebSocket(onEvent) {
       }
     };
 
+    let lastSyncTime = 0;
     const handleVisibilityOrFocus = () => {
-      if (document.visibilityState === "visible" && onEventRef.current) {
-        onEventRef.current({ type: "SYNC_STATUS", timestamp: Date.now() });
+      const now = Date.now();
+      if (document.visibilityState === "visible" && onEventRef.current && now - lastSyncTime > 4000) {
+        lastSyncTime = now;
+        onEventRef.current({ type: "SYNC_STATUS", timestamp: now });
       }
     };
 
     const handleOnline = () => {
       connectLocalWs();
-      if (onEventRef.current) {
-        onEventRef.current({ type: "SYNC_STATUS", timestamp: Date.now() });
+      const now = Date.now();
+      if (onEventRef.current && now - lastSyncTime > 4000) {
+        lastSyncTime = now;
+        onEventRef.current({ type: "SYNC_STATUS", timestamp: now });
       }
     };
 
