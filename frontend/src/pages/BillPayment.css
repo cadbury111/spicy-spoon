@@ -474,11 +474,68 @@
   margin: 4px 0 0 0;
 }
 
-/* Card Checkout */
+/* Card Checkout & Virtual Card Preview */
 .card-checkout-box {
   display: flex;
   flex-direction: column;
   gap: 14px;
+}
+
+.virtual-card-preview {
+  background: linear-gradient(135deg, #1e1b4b 0%, #312e81 50%, #4338ca 100%);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  border-radius: 16px;
+  padding: 18px 20px;
+  color: #ffffff;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5);
+  margin-bottom: 6px;
+}
+
+.virtual-card-preview .card-top-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 16px;
+}
+
+.virtual-card-preview .card-chip-icon {
+  font-size: 1.4rem;
+}
+
+.virtual-card-preview .card-brand-label {
+  font-size: 0.72rem;
+  letter-spacing: 1.5px;
+  font-weight: 800;
+  color: rgba(255, 255, 255, 0.75);
+}
+
+.virtual-card-preview .card-number-display {
+  font-family: 'Courier New', monospace;
+  font-size: 1.22rem;
+  letter-spacing: 2px;
+  font-weight: 700;
+  margin-bottom: 14px;
+  color: #ffffff;
+}
+
+.virtual-card-preview .card-bottom-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-end;
+}
+
+.virtual-card-preview small {
+  display: block;
+  font-size: 0.65rem;
+  color: rgba(255, 255, 255, 0.6);
+  letter-spacing: 1px;
+  margin-bottom: 2px;
+}
+
+.virtual-card-preview span {
+  font-size: 0.85rem;
+  font-weight: 700;
+  letter-spacing: 0.5px;
 }
 
 .card-input-group {
@@ -516,6 +573,50 @@
   padding: 20px;
   text-align: center;
   margin-bottom: 16px;
+}
+
+.cash-declined-alert {
+  background: rgba(239, 68, 68, 0.15);
+  border: 1.5px solid rgba(239, 68, 68, 0.45);
+  border-radius: 16px;
+  padding: 18px;
+  color: #fca5a5;
+  margin-top: 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  text-align: left;
+}
+
+.cash-declined-alert h4 {
+  margin: 0 0 4px 0;
+  color: #ef4444;
+  font-size: 0.95rem;
+  font-weight: 700;
+}
+
+.cash-declined-alert p {
+  margin: 0;
+  font-size: 0.82rem;
+  color: #e5d5ca;
+  line-height: 1.4;
+}
+
+.btn-retry-cash {
+  background: #ff5722;
+  color: #ffffff;
+  border: none;
+  padding: 8px 14px;
+  border-radius: 8px;
+  font-weight: 700;
+  font-size: 0.82rem;
+  cursor: pointer;
+  align-self: flex-start;
+  transition: all 0.2s ease;
+}
+
+.btn-retry-cash:hover {
+  background: #e64a19;
 }
 
 .cash-alert-icon {

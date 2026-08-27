@@ -699,4 +699,56 @@ router.post("/cash-confirm", verifyStaffAuth(["ADMIN"]), (req, res) => {
   }
 });
 
+// 10. Admin Decline / Reject Cash Payment Request (ADMIN ONLY)
+router.post("/cash-decline", verifyStaffAuth(["ADMIN"]), (req, res) => {
+  try {
+    const { bill_id, billId, transaction_id, reason } = req.body;
+    const targetBillId = Number(bill_id || billId);
+
+    const payment = db.prepare(`
+      SELECT p.*, b.order_id, b.table_id, b.session_id, b.bill_number, b.table_number
+      FROM payments p
+      JOIN bills b ON p.bill_id = b.id
+      WHERE (p.bill_id = ? OR p.transaction_id = ?) AND p.payment_method = 'CASH' AND p.status = 'CASH_PENDING'
+      ORDER BY p.id DESC
+    `).get(targetBillId || 0, transaction_id || "");
+
+    if (!payment) {
+      return res.status(404).json({ message: "Pending cash payment request not found" });
+    }
+
+    db.prepare(`
+      UPDATE payments
+      SET status = 'FAILED', gateway_response = 'ADMIN_CASH_DECLINED', updated_at = CURRENT_TIMESTAMP
+      WHERE id = ?
+    `).run(payment.id);
+
+    // Keep bill as UNPAID so customer can retry or choose Card/UPI
+    db.prepare("UPDATE bills SET status = 'UNPAID', payment_method = NULL WHERE id = ?").run(payment.bill_id);
+
+    const declinePayload = {
+      bill_id: payment.bill_id,
+      bill_number: payment.bill_number,
+      table_number: payment.table_number,
+      session_id: payment.session_id,
+      payment_id: payment.id,
+      reason: reason || "Cash not received at counter",
+      status: "DECLINED",
+    };
+
+    broadcast("CASH_PAYMENT_DECLINED", declinePayload);
+    broadcast("PAYMENT_FAILED", declinePayload);
+
+    res.json({
+      message: "Cash request declined. Customer notified to retry or choose alternative method.",
+      declined: true,
+      payment_id: payment.id,
+      bill_id: payment.bill_id,
+    });
+  } catch (error) {
+    console.error("Cash decline error:", error);
+    res.status(500).json({ message: "Failed to decline cash payment", error: error.message });
+  }
+});
+
 module.exports = router;

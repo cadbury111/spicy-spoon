@@ -33,6 +33,11 @@ function BillPayment({ billId = null, tableParam = null, sessionParam = null }) 
 
   // Payment State
   const [selectedMethod, setSelectedMethod] = useState("UPI"); // UPI, CARD, CASH
+  const selectedMethodRef = useRef(selectedMethod);
+  useEffect(() => {
+    selectedMethodRef.current = selectedMethod;
+  }, [selectedMethod]);
+
   const [paymentData, setPaymentData] = useState(null);
   const [upiQrDataUrl, setUpiQrDataUrl] = useState("");
   const [isProcessing, setIsProcessing] = useState(false);
@@ -40,6 +45,7 @@ function BillPayment({ billId = null, tableParam = null, sessionParam = null }) 
   const [verifiedReceipt, setVerifiedReceipt] = useState(null);
   const [settlementCelebration, setSettlementCelebration] = useState(null);
   const [cashRequested, setCashRequested] = useState(false);
+  const [cashDeclined, setCashDeclined] = useState(false);
 
   // Discount
   const [discountCode, setDiscountCode] = useState("");
@@ -47,7 +53,7 @@ function BillPayment({ billId = null, tableParam = null, sessionParam = null }) 
 
   // Card Form
   const [cardForm, setCardForm] = useState({
-    cardNumber: "4532 •••• •••• 8892",
+    cardNumber: "4532 8812 3456 8892",
     cardHolder: "Dining Guest",
     expiry: "12/28",
     cvv: "888",
@@ -111,7 +117,7 @@ function BillPayment({ billId = null, tableParam = null, sessionParam = null }) 
         amount: exactAmount,
         billNumber: invoiceNumber,
         tableNumber: tableNum,
-        paymentMethod: receiptData?.payment?.payment_method || receiptData?.payment_method || selectedMethod,
+        paymentMethod: receiptData?.payment?.payment_method || receiptData?.payment_method || selectedMethodRef.current,
       });
 
       triggerConfetti();
@@ -137,7 +143,7 @@ function BillPayment({ billId = null, tableParam = null, sessionParam = null }) 
         setSettlementCelebration(null);
       }, 1800);
     },
-    [targetTable, selectedMethod]
+    [targetTable]
   );
 
   // Card Form Handlers
@@ -184,7 +190,6 @@ function BillPayment({ billId = null, tableParam = null, sessionParam = null }) 
 
   // 1. Initiate Payment Method (UPI QR / Intent / Cash)
   const initiatePaymentMethod = useCallback(async (method, targetBillId) => {
-    setSelectedMethod(method);
     const bId = targetBillId || billRef.current?.id;
     if (!bId) return;
 
@@ -203,6 +208,7 @@ function BillPayment({ billId = null, tableParam = null, sessionParam = null }) 
       }
       if (method === "CASH") {
         setCashRequested(true);
+        setCashDeclined(false);
       }
     } catch (err) {
       console.warn("Payment method creation notice:", err.message);
@@ -212,6 +218,7 @@ function BillPayment({ billId = null, tableParam = null, sessionParam = null }) 
   // Strict Method Switcher
   const handleSelectMethod = (method) => {
     setSelectedMethod(method);
+    selectedMethodRef.current = method;
     setErrorMessage("");
     const currentBId = billRef.current?.id || bill?.id;
     if (currentBId) {
@@ -248,7 +255,7 @@ function BillPayment({ billId = null, tableParam = null, sessionParam = null }) 
 
       setBill(billResult);
 
-      if (billResult.status === "PAID") {
+      if (billResult?.status === "PAID") {
         handlePaymentSuccess({
           restaurant_name: billResult.restaurant_name || "Spicy Spoon",
           restaurant_address: billResult.restaurant_address || "Tiruppur-Palladam road, Tamil Nadu",
@@ -261,8 +268,6 @@ function BillPayment({ billId = null, tableParam = null, sessionParam = null }) 
           },
           items: billResult.items || [],
         });
-      } else {
-        initiatePaymentMethod("UPI", billResult.id);
       }
     } catch (err) {
       console.error("Live bill fetch error:", err);
@@ -270,7 +275,7 @@ function BillPayment({ billId = null, tableParam = null, sessionParam = null }) 
     } finally {
       setLoading(false);
     }
-  }, [billId, targetTable, targetSession, discountCode, handlePaymentSuccess, initiatePaymentMethod]);
+  }, [billId, targetTable, targetSession, discountCode, handlePaymentSuccess]);
 
   useEffect(() => {
     fetchLiveBill();
@@ -293,7 +298,7 @@ function BillPayment({ billId = null, tableParam = null, sessionParam = null }) 
                 restaurant_phone: freshBill.restaurant_phone || "+91 73958 77142",
                 bill: freshBill,
                 payment: freshBill.payment || {
-                  payment_method: freshBill.payment_method || selectedMethod,
+                  payment_method: freshBill.payment_method || selectedMethodRef.current,
                   transaction_id: freshBill.payment?.transaction_id || "VERIFIED-TXN",
                   amount: freshBill.grand_total,
                 },
@@ -332,13 +337,20 @@ function BillPayment({ billId = null, tableParam = null, sessionParam = null }) 
 
       if (event.type === "CASH_PAYMENT_REQUESTED" && isMyBill) {
         setCashRequested(true);
+        setCashDeclined(false);
+      }
+
+      if (event.type === "CASH_PAYMENT_DECLINED" && isMyBill) {
+        setCashRequested(false);
+        setCashDeclined(true);
+        setErrorMessage("Cash payment request was declined by the restaurant staff. Please pay at the counter or use UPI / Card.");
       }
 
       if (event.type === "BILL_GENERATED" && event.data?.id === currentBill?.id) {
         setBill(event.data);
       }
     },
-    [targetSession, targetTable, handlePaymentSuccess, selectedMethod]
+    [targetSession, targetTable, handlePaymentSuccess]
   );
 
   useWebSocket(handleWsEvent);
@@ -357,7 +369,7 @@ function BillPayment({ billId = null, tableParam = null, sessionParam = null }) 
             restaurant_phone: latestBill.restaurant_phone || "+91 73958 77142",
             bill: latestBill,
             payment: latestBill.payment || {
-              payment_method: latestBill.payment_method || selectedMethod,
+              payment_method: latestBill.payment_method || selectedMethodRef.current,
               transaction_id: latestBill.payment?.transaction_id || "VERIFIED-TXN",
               amount: latestBill.grand_total,
             },
@@ -372,7 +384,7 @@ function BillPayment({ billId = null, tableParam = null, sessionParam = null }) 
     return () => {
       if (pollTimerRef.current) clearInterval(pollTimerRef.current);
     };
-  }, [paymentSuccess, bill?.id, selectedMethod, handlePaymentSuccess, bill?.items]);
+  }, [paymentSuccess, bill?.id, handlePaymentSuccess, bill?.items]);
 
   // 3. Apply Discount Coupon Code
   const handleApplyCoupon = async () => {
@@ -388,7 +400,7 @@ function BillPayment({ billId = null, tableParam = null, sessionParam = null }) 
       if (res.bill) {
         setBill(res.bill);
         setDiscountStatus({ type: "success", text: `Coupon "${discountCode}" applied successfully!` });
-        initiatePaymentMethod(selectedMethod, res.bill.id);
+        initiatePaymentMethod(selectedMethodRef.current, res.bill.id);
       }
     } catch (err) {
       setDiscountStatus({ type: "error", text: "Failed to apply coupon: " + err.message });
@@ -796,9 +808,30 @@ function BillPayment({ billId = null, tableParam = null, sessionParam = null }) 
                 </div>
               )}
 
-              {/* 2. Card Payment (Dedicated Form) */}
+              {/* 2. Card Payment (Dedicated Form with Live Virtual Card Preview) */}
               {selectedMethod === "CARD" && (
                 <div className="card-checkout-box">
+                  {/* Visual Credit Card Preview */}
+                  <div className="virtual-card-preview">
+                    <div className="card-top-row">
+                      <span className="card-chip-icon">💳</span>
+                      <span className="card-brand-label">VISA / MASTERCARD</span>
+                    </div>
+                    <div className="card-number-display">
+                      {cardForm.cardNumber || "•••• •••• •••• ••••"}
+                    </div>
+                    <div className="card-bottom-row">
+                      <div className="card-holder-block">
+                        <small>CARDHOLDER</small>
+                        <span>{cardForm.cardHolder || "DINING GUEST"}</span>
+                      </div>
+                      <div className="card-expiry-block">
+                        <small>EXPIRES</small>
+                        <span>{cardForm.expiry || "MM/YY"}</span>
+                      </div>
+                    </div>
+                  </div>
+
                   <div className="card-input-group">
                     <label>Cardholder Name</label>
                     <input
@@ -868,29 +901,48 @@ function BillPayment({ billId = null, tableParam = null, sessionParam = null }) 
                 <div className="cash-checkout-box">
                   <div className="cash-request-alert">
                     <Banknote size={40} className="cash-alert-icon" />
-                    <h3>Cash Payment</h3>
+                    <h3>Cash Settlement at Table</h3>
                     <p className="cash-amount-headline">
-                      Amount to Pay: <strong>₹{Number(bill.grand_total).toFixed(2)}</strong>
+                      Exact Amount Due: <strong>₹{Number(bill.grand_total).toFixed(2)}</strong>
                     </p>
                     <p className="cash-instruction-text">
-                      Please pay the exact amount to the restaurant staff.
+                      Please hand the exact cash to the server or restaurant counter for Table {bill.table_number}.
                     </p>
                   </div>
 
-                  <div className="cash-waiting-admin-card">
-                    <div className="listening-pulse-ring">
-                      <span className="pulse-dot orange"></span>
-                      <Clock size={18} className="clock-icon-pulse" />
+                  {cashDeclined ? (
+                    <div className="cash-declined-alert">
+                      <AlertCircle size={24} className="decline-icon" />
+                      <div>
+                        <h4>Cash Request Declined / Not Received</h4>
+                        <p>The counter staff could not confirm this cash payment. Please pay at the counter or try paying with UPI or Card.</p>
+                      </div>
+                      <button
+                        className="btn-retry-cash"
+                        onClick={() => {
+                          setCashDeclined(false);
+                          initiatePaymentMethod("CASH", bill.id);
+                        }}
+                      >
+                        Resend Cash Request
+                      </button>
                     </div>
-                    <div className="cash-wait-info">
-                      <h4>Waiting for restaurant confirmation...</h4>
-                      <span className="cash-status-tag">Status: CASH_PENDING</span>
-                      <p>
-                        Our staff has received your cash payment request for Table {bill.table_number}. When restaurant staff confirms
-                        the cash received in the Admin Portal, this screen will automatically open your verified Digital Receipt.
-                      </p>
+                  ) : (
+                    <div className="cash-waiting-admin-card">
+                      <div className="listening-pulse-ring">
+                        <span className="pulse-dot orange"></span>
+                        <Clock size={18} className="clock-icon-pulse" />
+                      </div>
+                      <div className="cash-wait-info">
+                        <h4>Waiting for restaurant staff confirmation...</h4>
+                        <span className="cash-status-tag">Status: CASH_PENDING</span>
+                        <p>
+                          Our staff has been alerted about your cash request for Table {bill.table_number}. As soon as staff confirms
+                          receipt in the Admin Portal, this screen will automatically open your verified Digital Receipt.
+                        </p>
+                      </div>
                     </div>
-                  </div>
+                  )}
                 </div>
               )}
             </div>

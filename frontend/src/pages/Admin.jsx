@@ -24,6 +24,7 @@ import {
   Sparkles,
   AlertCircle,
   CheckCircle2,
+  XCircle,
   UserPlus,
   Lock,
 } from "lucide-react";
@@ -253,6 +254,19 @@ function Admin({ onLogout }) {
     }
   };
 
+  // Cash Decline / Not Paid (ADMIN ONLY)
+  const handleDeclineCashPayment = async (billId) => {
+    if (!billId) return;
+    try {
+      await api.declineCashPayment({ bill_id: billId });
+      setCashRequests((prev) => prev.filter((r) => (r.bill_id || r.id) !== billId));
+      setSelectedTable(null);
+      fetchAllData(false);
+    } catch (err) {
+      alert("Failed to decline cash request: " + err.message);
+    }
+  };
+
   // Release Table (ADMIN ONLY)
   const handleReleaseTable = async (tableId) => {
     if (!confirm("Are you sure you want to release this table to AVAILABLE?")) return;
@@ -476,13 +490,24 @@ function Admin({ onLogout }) {
                     </strong>
                   </div>
 
-                  <button
-                    className="btn-admin-confirm-cash"
-                    onClick={() => handleConfirmCashPayment(req.bill_id || req.id || req.bill?.id)}
-                  >
-                    <CheckCircle2 size={18} />
-                    <span>Confirm Cash Received</span>
-                  </button>
+                  <div className="cash-req-actions-group">
+                    <button
+                      className="btn-admin-confirm-cash"
+                      onClick={() => handleConfirmCashPayment(req.bill_id || req.id || req.bill?.id)}
+                      title="Confirm Cash Received"
+                    >
+                      <CheckCircle2 size={16} />
+                      <span>✓ Paid (Confirm)</span>
+                    </button>
+                    <button
+                      className="btn-admin-decline-cash"
+                      onClick={() => handleDeclineCashPayment(req.bill_id || req.id || req.bill?.id)}
+                      title="Decline Cash Request"
+                    >
+                      <XCircle size={16} />
+                      <span>✕ Not Paid (Decline)</span>
+                    </button>
+                  </div>
                 </div>
               ))}
             </div>
@@ -737,9 +762,14 @@ function Admin({ onLogout }) {
                       <td>{b.payment_method || "Pending"}</td>
                       <td>
                         {b.status !== "PAID" && (
-                          <button className="btn-collect-cash" onClick={() => handleConfirmCashPayment(b.id)}>
-                            <Banknote size={14} /> Confirm Cash Received
-                          </button>
+                          <div className="bill-action-btns-dual">
+                            <button className="btn-collect-cash" onClick={() => handleConfirmCashPayment(b.id)} title="Confirm Cash Received">
+                              <CheckCircle2 size={13} /> Paid
+                            </button>
+                            <button className="btn-decline-cash" onClick={() => handleDeclineCashPayment(b.id)} title="Decline Cash Request">
+                              <XCircle size={13} /> Not Paid
+                            </button>
+                          </div>
                         )}
                         {b.status === "PAID" && <span className="settled-tag">Settled ✓</span>}
                       </td>
@@ -1211,12 +1241,20 @@ function Admin({ onLogout }) {
 
               <div className="tbl-modal-actions">
                 {tableDetailsBill && tableDetailsBill.status !== "PAID" && (
-                  <button
-                    className="btn-collect-cash-modal"
-                    onClick={() => handleConfirmCashPayment(tableDetailsBill.id)}
-                  >
-                    <Banknote size={16} /> Confirm Cash Received & Settle
-                  </button>
+                  <div className="modal-cash-dual-btns">
+                    <button
+                      className="btn-collect-cash-modal"
+                      onClick={() => handleConfirmCashPayment(tableDetailsBill.id)}
+                    >
+                      <CheckCircle2 size={16} /> Confirm Paid (Cash Received)
+                    </button>
+                    <button
+                      className="btn-decline-cash-modal"
+                      onClick={() => handleDeclineCashPayment(tableDetailsBill.id)}
+                    >
+                      <XCircle size={16} /> Decline / Not Paid
+                    </button>
+                  </div>
                 )}
 
                 <button

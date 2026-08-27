@@ -67,23 +67,23 @@ router.get("/live", (req, res) => {
       existingBill = db.prepare("SELECT * FROM bills WHERE session_id = ? ORDER BY id DESC").get(targetSessionId);
     }
 
-    // Find all active orders
+    // Find all active unpaid orders for this active dining session
     let activeOrders = [];
     if (targetSessionId) {
       activeOrders = db.prepare(`
         SELECT * FROM orders
-        WHERE session_id = ? AND status NOT IN ('CANCELLED')
+        WHERE session_id = ? AND status NOT IN ('CANCELLED', 'COMPLETED', 'PAID')
         ORDER BY id ASC
       `).all(targetSessionId);
     } else if (table) {
       activeOrders = db.prepare(`
         SELECT * FROM orders
-        WHERE table_id = ? AND status NOT IN ('COMPLETED', 'CANCELLED')
+        WHERE table_id = ? AND status NOT IN ('COMPLETED', 'CANCELLED', 'PAID')
         ORDER BY id ASC
       `).all(table.id);
     }
 
-    if (activeOrders.length === 0 && !existingBill) {
+    if (activeOrders.length === 0 && (!existingBill || existingBill.status === 'PAID')) {
       return res.status(404).json({ message: "No active orders found for this table session" });
     }
 
@@ -217,23 +217,28 @@ router.post("/generate", (req, res) => {
       }
     }
 
-    // Find orders to aggregate
+    // Find orders to aggregate (only active unpaid orders)
     let ordersToBill = [];
     if (targetSessionId) {
       ordersToBill = db.prepare(`
         SELECT * FROM orders
-        WHERE session_id = ? AND status NOT IN ('CANCELLED')
+        WHERE session_id = ? AND status NOT IN ('CANCELLED', 'COMPLETED', 'PAID')
       `).all(targetSessionId);
     } else if (targetOrderId) {
       const singleOrder = db.prepare("SELECT * FROM orders WHERE id = ?").get(targetOrderId);
-      if (singleOrder) {
+      if (singleOrder && !['CANCELLED', 'COMPLETED', 'PAID'].includes(singleOrder.status)) {
         targetSessionId = singleOrder.session_id;
         ordersToBill = db.prepare(`
           SELECT * FROM orders
-          WHERE session_id = ? AND status NOT IN ('CANCELLED')
+          WHERE session_id = ? AND status NOT IN ('CANCELLED', 'COMPLETED', 'PAID')
         `).all(targetSessionId);
         if (ordersToBill.length === 0) ordersToBill = [singleOrder];
       }
+    } else if (table) {
+      ordersToBill = db.prepare(`
+        SELECT * FROM orders
+        WHERE table_id = ? AND status NOT IN ('CANCELLED', 'COMPLETED', 'PAID')
+      `).all(table.id);
     }
 
     if (ordersToBill.length === 0) {

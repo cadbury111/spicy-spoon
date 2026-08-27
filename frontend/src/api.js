@@ -334,8 +334,12 @@ async function handleClientFallback(endpoint, options = {}, originalError) {
       const urlObj = new URL(`http://dummy${endpoint}`);
       const sessionId = urlObj.searchParams.get("session_id");
       const tableNumber = urlObj.searchParams.get("table_number");
+      const isActiveOnly = endpoint.startsWith("/orders/active");
 
       let filtered = orders;
+      if (isActiveOnly) {
+        filtered = filtered.filter((o) => o.status !== "COMPLETED" && o.status !== "PAID" && o.status !== "CANCELLED");
+      }
       if (sessionId && sessionId !== "undefined" && sessionId !== "null") {
         filtered = filtered.filter((o) => o.session_id === sessionId);
       }
@@ -459,8 +463,9 @@ async function handleClientFallback(endpoint, options = {}, originalError) {
 
       const existingBill = bills.find(
         (b) =>
-          (sessionId && b.session_id === sessionId) ||
-          (!sessionId && b.status !== "PAID" && (b.table_number === tableNumber || b.table_number === `T${tableNumber.replace(/^T/i, "")}`))
+          b.status !== "PAID" &&
+          ((sessionId && b.session_id === sessionId) ||
+           (!sessionId && (b.table_number === tableNumber || b.table_number === `T${tableNumber.replace(/^T/i, "")}`)))
       );
 
       if (existingBill) {
@@ -470,8 +475,11 @@ async function handleClientFallback(endpoint, options = {}, originalError) {
       const allOrders = getLocalDemoData("spicy_demo_orders", INITIAL_DEMO_ORDERS);
       const sessionOrders = allOrders.filter(
         (o) =>
-          (sessionId && o.session_id === sessionId) ||
-          (tableNumber && (o.table_number === tableNumber || o.tableNumber === tableNumber))
+          o.status !== "COMPLETED" &&
+          o.status !== "PAID" &&
+          o.status !== "CANCELLED" &&
+          ((sessionId && o.session_id === sessionId) ||
+           (!sessionId && (o.table_number === tableNumber || o.tableNumber === tableNumber || o.table_number === `T${tableNumber.replace(/^T/i, "")}`)))
       );
 
       if (sessionOrders.length === 0) {
@@ -514,10 +522,13 @@ async function handleClientFallback(endpoint, options = {}, originalError) {
       const allOrders = getLocalDemoData("spicy_demo_orders", INITIAL_DEMO_ORDERS);
       const sessionOrders = allOrders.filter(
         (o) =>
-          o.session_id === sessionId ||
-          o.table_number === tableNumber ||
-          o.tableNumber === tableNumber ||
-          o.table_number === `T${tableNumber.replace(/^T/i, "")}`
+          o.status !== "COMPLETED" &&
+          o.status !== "PAID" &&
+          o.status !== "CANCELLED" &&
+          (o.session_id === sessionId ||
+           o.table_number === tableNumber ||
+           o.tableNumber === tableNumber ||
+           o.table_number === `T${tableNumber.replace(/^T/i, "")}`)
       );
 
       if (sessionOrders.length === 0) {
@@ -584,6 +595,33 @@ async function handleClientFallback(endpoint, options = {}, originalError) {
         status: "CASH_PENDING",
         payment_method: "CASH",
       }));
+    }
+
+    if (endpoint.includes("cash-decline")) {
+      let bills = getLocalDemoData("spicy_demo_bills", []);
+      const billId = body.bill_id || body.billId;
+      const targetBill = bills.find((b) => b.id === billId || b.id === Number(billId)) || null;
+
+      if (targetBill) {
+        bills = bills.map((b) => (b.id === targetBill.id ? { ...b, payment_method: null, status: "UNPAID" } : b));
+        setLocalDemoData("spicy_demo_bills", bills);
+      }
+
+      dispatchClientEvent("CASH_PAYMENT_DECLINED", {
+        bill_id: billId,
+        reason: body.reason || "Cash not received by counter",
+        status: "DECLINED",
+      });
+      dispatchClientEvent("PAYMENT_FAILED", {
+        bill_id: billId,
+        reason: "Cash request declined",
+      });
+
+      return {
+        message: "Cash request declined",
+        declined: true,
+        bill_id: billId,
+      };
     }
 
     if (endpoint.includes("create")) {
@@ -665,19 +703,33 @@ async function handleClientFallback(endpoint, options = {}, originalError) {
 
     if (endpoint.includes("verify") || endpoint.includes("cash-confirm")) {
       let bills = getLocalDemoData("spicy_demo_bills", []);
+      let orders = getLocalDemoData("spicy_demo_orders", INITIAL_DEMO_ORDERS);
       const billId = body.bill_id;
       const isCash = endpoint.includes("cash-confirm");
 
-      const targetBill = bills.find((b) => b.id === billId) || null;
+      const targetBill = bills.find((b) => b.id === billId || Number(b.id) === Number(billId)) || null;
       if (!targetBill) {
         throw new Error("Bill not found for verification");
       }
 
-      bills = bills.map((b) => (b.id === targetBill.id ? { ...b, status: "PAID", payment_method: isCash ? "CASH" : "ONLINE" } : b));
+      bills = bills.map((b) => (b.id === targetBill.id ? { ...b, status: "PAID", payment_method: isCash ? "CASH" : (b.payment_method || "ONLINE") } : b));
       setLocalDemoData("spicy_demo_bills", bills);
 
-      const paidBill = { ...targetBill, status: "PAID", payment_method: isCash ? "CASH" : "ONLINE" };
+      const paidBill = { ...targetBill, status: "PAID", payment_method: isCash ? "CASH" : (targetBill.payment_method || "ONLINE") };
       const tableNumber = paidBill.table_number || "T1";
+
+      // Mark associated orders as COMPLETED
+      orders = orders.map((o) => {
+        if (
+          (paidBill.session_id && o.session_id === paidBill.session_id) ||
+          o.table_number === tableNumber ||
+          o.tableNumber === tableNumber
+        ) {
+          return { ...o, status: "COMPLETED" };
+        }
+        return o;
+      });
+      setLocalDemoData("spicy_demo_orders", orders);
 
       // Release table back to AVAILABLE
       tables = tables.map((t) => (t.table_number === tableNumber ? { ...t, status: "AVAILABLE", current_order_id: null, current_session_id: null, current_booking_id: null } : t));
@@ -692,7 +744,7 @@ async function handleClientFallback(endpoint, options = {}, originalError) {
         bill: paidBill,
         payment: {
           id: Date.now(),
-          payment_method: isCash ? "CASH" : "ONLINE",
+          payment_method: isCash ? "CASH" : (paidBill.payment_method || "ONLINE"),
           transaction_id: body.transaction_id || `PAY-${Date.now().toString().slice(-6)}`,
           amount: paidBill.grand_total,
           status: "SUCCESS",
@@ -982,6 +1034,7 @@ export const api = {
   createPayment: (data) => request("/payments/create", { method: "POST", body: data }),
   verifyPayment: (data) => request("/payments/verify", { method: "POST", body: data }),
   confirmCashPayment: (data) => request("/payments/cash-confirm", { method: "POST", body: data }),
+  declineCashPayment: (data) => request("/payments/cash-decline", { method: "POST", body: data }),
   getCashRequests: () => request("/payments/cash-requests"),
   getPayments: () => request("/payments"),
   getPayment: (id) => request(`/payments/${id}`),
