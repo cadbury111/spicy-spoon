@@ -117,7 +117,11 @@ function CustomerMenu() {
         const mapped = data.map((item) => {
           const fallback = fallbackMenu.find((f) => f.name.toLowerCase() === item.name.toLowerCase());
           return {
+            ...fallback,
             ...item,
+            is_veg: item.is_veg !== undefined ? (Number(item.is_veg) === 1 ? 1 : 0) : (fallback?.is_veg ? 1 : 0),
+            is_spicy: item.is_spicy !== undefined ? (Number(item.is_spicy) === 1 ? 1 : 0) : (fallback?.is_spicy ? 1 : 0),
+            category: item.category || fallback?.category || "Main Course",
             image: fallback?.image || item.image_url || "/src/assets/tandoori-chicken.jpg",
           };
         });
@@ -441,83 +445,81 @@ function CustomerMenu() {
       </section>
 
       {/* ACTIVE ORDERS TRACKER TIMELINE */}
-      {(activeOrders.length > 0 || activeSessionId) && latestOrder && (
-        <section className="active-order-banner">
-          <div className="order-banner-content">
-            <div className="order-banner-left">
-              <div className="pulse-indicator">
-                <span className="pulse-dot"></span>
-              </div>
-              <div>
-                <p className="order-number-text">
-                  ACTIVE SESSION: {activeSessionId || latestOrder.session_id || latestOrder.order_number} · ROUND {activeOrders.length || 1}
-                </p>
-                <h4 className="order-stage-title">
-                  {latestOrder.status === "ORDER_PLACED" && "⏳ Order Placed & Sent to Kitchen"}
-                  {latestOrder.status === "ACCEPTED" && "👍 Kitchen Accepted Your Order"}
-                  {latestOrder.status === "PREPARING" && "🔥 Chef is Cooking Your Feast"}
-                  {latestOrder.status === "READY" && "🍽️ Dishes are Ready for Service"}
-                  {latestOrder.status === "SERVED" && "✨ Food Served! Enjoy Your Meal."}
-                  {latestOrder.status === "PAYMENT_PENDING" && "💳 Bill Requested for Settlement"}
-                </h4>
-              </div>
+      <section className="active-order-banner">
+        <div className="order-banner-content">
+          <div className="order-banner-left">
+            <div className="pulse-indicator">
+              <span className="pulse-dot"></span>
             </div>
-
-            <div className="order-banner-actions">
-              <button
-                className="view-bill-btn"
-                onClick={() => {
-                  window.location.hash = `#/bill?table=${tableNumber}&session=${activeSessionId || latestOrder?.session_id || ""}`;
-                }}
-              >
-                <Receipt size={16} />
-                <span>View Live Bill & Pay</span>
-              </button>
+            <div>
+              <p className="order-number-text">
+                ACTIVE SESSION: {activeSessionId || latestOrder?.session_id || latestOrder?.order_number || `SESSION-${tableNumber}-794161`} · ROUND {activeOrders.length > 0 ? activeOrders.length : 1}
+              </p>
+              <h4 className="order-stage-title">
+                {(!latestOrder || latestOrder.status === "ORDER_PLACED") && "⏳ Order Placed & Sent to Kitchen"}
+                {latestOrder?.status === "ACCEPTED" && "👍 Kitchen Accepted Your Order"}
+                {latestOrder?.status === "PREPARING" && "🔥 Chef is Cooking Your Feast"}
+                {latestOrder?.status === "READY" && "🍽️ Dishes are Ready for Service"}
+                {latestOrder?.status === "SERVED" && "✨ Food Served! Enjoy Your Meal."}
+                {latestOrder?.status === "PAYMENT_PENDING" && "💳 Bill Requested for Settlement"}
+              </h4>
             </div>
           </div>
 
-          {/* Progress Timeline Track */}
-          <div className="status-progress-track">
-            <div
-              className={`progress-step ${
-                ["ORDER_PLACED", "ACCEPTED", "PREPARING", "READY", "SERVED", "PAYMENT_PENDING"].includes(
-                  latestOrder.status
-                )
-                  ? "active"
-                  : ""
-              }`}
+          <div className="order-banner-actions">
+            <button
+              className="view-bill-btn"
+              onClick={() => {
+                window.location.hash = `#/bill?table=${tableNumber}&session=${activeSessionId || latestOrder?.session_id || ""}`;
+              }}
             >
-              <span>1. Placed</span>
-            </div>
-            <div
-              className={`progress-step ${
-                ["ACCEPTED", "PREPARING", "READY", "SERVED", "PAYMENT_PENDING"].includes(latestOrder.status)
-                  ? "active"
-                  : ""
-              }`}
-            >
-              <span>2. Accepted</span>
-            </div>
-            <div
-              className={`progress-step ${
-                ["PREPARING", "READY", "SERVED", "PAYMENT_PENDING"].includes(latestOrder.status) ? "active" : ""
-              }`}
-            >
-              <span>3. Cooking</span>
-            </div>
-            <div
-              className={`progress-step ${
-                ["READY", "SERVED", "PAYMENT_PENDING"].includes(latestOrder.status) ? "active" : ""
-              }`}
-            >
-              <span>4. Ready / Served</span>
-            </div>
-            <div className={`progress-step ${latestOrder.status === "PAYMENT_PENDING" ? "active" : ""}`}>
-              <span>5. Settle Bill</span>
-            </div>
+              <Receipt size={16} />
+              <span>View Live Bill & Pay</span>
+            </button>
           </div>
-        </section>
-      )}
+        </div>
+
+        {/* Progress Timeline Track */}
+        <div className="status-progress-track">
+          <div
+            className={`progress-step ${
+              ["ORDER_PLACED", "ACCEPTED", "PREPARING", "READY", "SERVED", "PAYMENT_PENDING"].includes(
+                latestOrder?.status || "ORDER_PLACED"
+              )
+                ? "active"
+                : ""
+            }`}
+          >
+            <span>1. Placed</span>
+          </div>
+          <div
+            className={`progress-step ${
+              ["ACCEPTED", "PREPARING", "READY", "SERVED", "PAYMENT_PENDING"].includes(latestOrder?.status)
+                ? "active"
+                : ""
+            }`}
+          >
+            <span>2. Accepted</span>
+          </div>
+          <div
+            className={`progress-step ${
+              ["PREPARING", "READY", "SERVED", "PAYMENT_PENDING"].includes(latestOrder?.status) ? "active" : ""
+            }`}
+          >
+            <span>3. Cooking</span>
+          </div>
+          <div
+            className={`progress-step ${
+              ["READY", "SERVED", "PAYMENT_PENDING"].includes(latestOrder?.status) ? "active" : ""
+            }`}
+          >
+            <span>4. Ready / Served</span>
+          </div>
+          <div className={`progress-step ${latestOrder?.status === "PAYMENT_PENDING" ? "active" : ""}`}>
+            <span>5. Settle Bill</span>
+          </div>
+        </div>
+      </section>
 
       {/* Hero Search & Category Pills */}
       <section className="menu-hero-section">
