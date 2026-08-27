@@ -63,6 +63,71 @@ function connectGlobalWs() {
   }
 }
 
+function mergeIncomingPayloadIntoLocalStorage(payload) {
+  if (!payload) return false;
+  let updated = false;
+
+  // 1. Single order object in payload.data (NEW_ORDER or ORDER_STATUS_UPDATED)
+  if (
+    (payload.type === "NEW_ORDER" || payload.type === "ORDER_STATUS_UPDATED") &&
+    payload.data
+  ) {
+    const singleOrder = payload.data.order || payload.data;
+    if (singleOrder && (singleOrder.id || singleOrder.order_number)) {
+      const existingOrders = JSON.parse(localStorage.getItem("spicy_demo_orders") || "[]");
+      const key = String(singleOrder.id || singleOrder.order_number);
+      const filtered = existingOrders.filter((o) => String(o.id || o.order_number) !== key);
+      const merged = [singleOrder, ...filtered];
+      localStorage.setItem("spicy_demo_orders", JSON.stringify(merged));
+      updated = true;
+    }
+  }
+
+  // 2. Full orders array in payload.orders
+  if (payload.orders && Array.isArray(payload.orders) && payload.orders.length > 0) {
+    const existingOrders = JSON.parse(localStorage.getItem("spicy_demo_orders") || "[]");
+    const map = new Map();
+    existingOrders.forEach((o) => map.set(String(o.id || o.order_number), o));
+    payload.orders.forEach((o) => map.set(String(o.id || o.order_number), o));
+    const merged = Array.from(map.values()).sort((a, b) => (b.id || 0) - (a.id || 0));
+    localStorage.setItem("spicy_demo_orders", JSON.stringify(merged));
+    updated = true;
+  }
+
+  // 3. Single table object or full tables array
+  if (payload.tables && Array.isArray(payload.tables) && payload.tables.length > 0) {
+    localStorage.setItem("spicy_demo_tables", JSON.stringify(payload.tables));
+    updated = true;
+  } else if (payload.type === "TABLE_STATUS_UPDATED" && payload.data) {
+    const tableObj = payload.data.table || payload.data;
+    if (tableObj && (tableObj.id || tableObj.table_number)) {
+      const existingTables = JSON.parse(localStorage.getItem("spicy_demo_tables") || "[]");
+      const mergedTables = existingTables.map((t) => (t.id === tableObj.id || t.table_number === tableObj.table_number ? { ...t, ...tableObj } : t));
+      localStorage.setItem("spicy_demo_tables", JSON.stringify(mergedTables));
+      updated = true;
+    }
+  }
+
+  // 4. Bookings
+  if (payload.bookings && Array.isArray(payload.bookings) && payload.bookings.length > 0) {
+    localStorage.setItem("spicy_demo_bookings", JSON.stringify(payload.bookings));
+    updated = true;
+  } else if (payload.type === "NEW_BOOKING" && payload.data && payload.data.id) {
+    const existingBookings = JSON.parse(localStorage.getItem("spicy_demo_bookings") || "[]");
+    const filtered = existingBookings.filter((b) => b.id !== payload.data.id);
+    localStorage.setItem("spicy_demo_bookings", JSON.stringify([payload.data, ...filtered]));
+    updated = true;
+  }
+
+  // 5. Bills
+  if (payload.bills && Array.isArray(payload.bills) && payload.bills.length > 0) {
+    localStorage.setItem("spicy_demo_bills", JSON.stringify(payload.bills));
+    updated = true;
+  }
+
+  return updated;
+}
+
 function connectGlobalSse() {
   if (typeof window === "undefined" || typeof EventSource === "undefined") return;
 
@@ -89,20 +154,7 @@ function connectGlobalSse() {
             return;
           }
 
-          // Sync shared state data into local storage from peer devices
-          if (payload.tables && Array.isArray(payload.tables)) {
-            localStorage.setItem("spicy_demo_tables", JSON.stringify(payload.tables));
-          }
-          if (payload.bookings && Array.isArray(payload.bookings)) {
-            localStorage.setItem("spicy_demo_bookings", JSON.stringify(payload.bookings));
-          }
-          if (payload.orders && Array.isArray(payload.orders)) {
-            localStorage.setItem("spicy_demo_orders", JSON.stringify(payload.orders));
-          }
-          if (payload.bills && Array.isArray(payload.bills)) {
-            localStorage.setItem("spicy_demo_bills", JSON.stringify(payload.bills));
-          }
-
+          mergeIncomingPayloadIntoLocalStorage(payload);
           notifyListeners(payload);
         }
       } catch (err) {}
@@ -128,10 +180,7 @@ async function pollHistoricalCloudEvents() {
     const text = await res.text();
     const lines = text.split("\n").filter((l) => l.trim());
 
-    let latestOrders = null;
-    let latestTables = null;
-    let latestBookings = null;
-    let latestBills = null;
+    let hasChanges = false;
     let lastEvent = null;
 
     for (const line of lines) {
@@ -140,46 +189,10 @@ async function pollHistoricalCloudEvents() {
         if (raw.event === "message" && raw.message) {
           const payload = JSON.parse(raw.message);
           if (payload.type) lastEvent = payload;
-
-          if (payload.orders && Array.isArray(payload.orders)) {
-            latestOrders = payload.orders;
-          }
-          if (payload.tables && Array.isArray(payload.tables)) {
-            latestTables = payload.tables;
-          }
-          if (payload.bookings && Array.isArray(payload.bookings)) {
-            latestBookings = payload.bookings;
-          }
-          if (payload.bills && Array.isArray(payload.bills)) {
-            latestBills = payload.bills;
-          }
+          const updated = mergeIncomingPayloadIntoLocalStorage(payload);
+          if (updated) hasChanges = true;
         }
       } catch (e) {}
-    }
-
-    let hasChanges = false;
-
-    if (latestOrders && Array.isArray(latestOrders) && latestOrders.length > 0) {
-      const existing = JSON.parse(localStorage.getItem("spicy_demo_orders") || "[]");
-      const map = new Map();
-      existing.forEach((o) => map.set(String(o.id || o.order_number), o));
-      latestOrders.forEach((o) => map.set(String(o.id || o.order_number), o));
-      const merged = Array.from(map.values()).sort((a, b) => (b.id || 0) - (a.id || 0));
-      localStorage.setItem("spicy_demo_orders", JSON.stringify(merged));
-      hasChanges = true;
-    }
-
-    if (latestTables && Array.isArray(latestTables) && latestTables.length > 0) {
-      localStorage.setItem("spicy_demo_tables", JSON.stringify(latestTables));
-      hasChanges = true;
-    }
-    if (latestBookings && Array.isArray(latestBookings) && latestBookings.length > 0) {
-      localStorage.setItem("spicy_demo_bookings", JSON.stringify(latestBookings));
-      hasChanges = true;
-    }
-    if (latestBills && Array.isArray(latestBills) && latestBills.length > 0) {
-      localStorage.setItem("spicy_demo_bills", JSON.stringify(latestBills));
-      hasChanges = true;
     }
 
     if (hasChanges) {
