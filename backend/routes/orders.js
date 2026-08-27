@@ -5,8 +5,15 @@ const { broadcast } = require("../websocket");
 const { verifyStaffAuth } = require("../middleware/auth");
 
 function generateOrderNumber() {
-  const randomNum = Math.floor(1000 + Math.random() * 9000);
-  return `ORD-${randomNum}`;
+  let orderNumber;
+  let exists;
+  do {
+    const ts = Date.now().toString().slice(-4);
+    const rand = Math.floor(1000 + Math.random() * 9000);
+    orderNumber = `ORD-${ts}${rand}`;
+    exists = db.prepare("SELECT id FROM orders WHERE order_number = ?").get(orderNumber);
+  } while (exists);
+  return orderNumber;
 }
 
 function generateSessionId(tableNumber) {

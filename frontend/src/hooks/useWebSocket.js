@@ -3,176 +3,200 @@ import { getWsUrl, getDeviceId } from "../api";
 
 const CLOUD_SYNC_TOPIC = "spicy_spoon_cloud_sync_prod_v2";
 
+// Global Shared Singleton State
+const listeners = new Set();
+let globalWs = null;
+let globalSse = null;
+let globalWsReconnectTimer = null;
+let globalSseReconnectTimer = null;
+let isInitialized = false;
+let globalIsConnected = true;
+let lastSyncTimestamp = 0;
+
+function notifyListeners(payload) {
+  if (!payload) return;
+  listeners.forEach((listener) => {
+    try {
+      listener(payload);
+    } catch (e) {
+      console.warn("WebSocket listener error:", e);
+    }
+  });
+}
+
+function connectGlobalWs() {
+  const wsUrl = getWsUrl();
+  if (!wsUrl || typeof window === "undefined") return;
+
+  if (globalWs && (globalWs.readyState === WebSocket.OPEN || globalWs.readyState === WebSocket.CONNECTING)) {
+    return;
+  }
+
+  try {
+    globalWs = new WebSocket(wsUrl);
+
+    globalWs.onopen = () => {
+      globalIsConnected = true;
+      notifyListeners({ type: "WS_RECONNECTED", timestamp: Date.now() });
+    };
+
+    globalWs.onmessage = (event) => {
+      try {
+        const payload = JSON.parse(event.data);
+        notifyListeners(payload);
+      } catch (e) {}
+    };
+
+    globalWs.onclose = () => {
+      globalIsConnected = false;
+      if (globalWsReconnectTimer) clearTimeout(globalWsReconnectTimer);
+      globalWsReconnectTimer = setTimeout(connectGlobalWs, 2000);
+    };
+
+    globalWs.onerror = () => {
+      try {
+        globalWs.close();
+      } catch (e) {}
+    };
+  } catch (err) {
+    globalWsReconnectTimer = setTimeout(connectGlobalWs, 3000);
+  }
+}
+
+function connectGlobalSse() {
+  if (typeof window === "undefined" || typeof EventSource === "undefined") return;
+
+  if (globalSse && globalSse.readyState !== EventSource.CLOSED) {
+    return;
+  }
+
+  try {
+    globalSse = new EventSource(`https://ntfy.sh/${CLOUD_SYNC_TOPIC}/sse`);
+
+    globalSse.onopen = () => {
+      globalIsConnected = true;
+    };
+
+    globalSse.onmessage = (event) => {
+      try {
+        const raw = JSON.parse(event.data);
+        if (raw.event === "message" && raw.message) {
+          const payload = JSON.parse(raw.message);
+          const myDeviceId = getDeviceId();
+
+          // Ignore own echo to avoid double processing
+          if (payload.senderDeviceId && payload.senderDeviceId === myDeviceId) {
+            return;
+          }
+
+          // Sync shared state data into local storage from peer devices
+          if (payload.tables && Array.isArray(payload.tables)) {
+            localStorage.setItem("spicy_demo_tables", JSON.stringify(payload.tables));
+          }
+          if (payload.bookings && Array.isArray(payload.bookings)) {
+            localStorage.setItem("spicy_demo_bookings", JSON.stringify(payload.bookings));
+          }
+          if (payload.orders && Array.isArray(payload.orders)) {
+            localStorage.setItem("spicy_demo_orders", JSON.stringify(payload.orders));
+          }
+          if (payload.bills && Array.isArray(payload.bills)) {
+            localStorage.setItem("spicy_demo_bills", JSON.stringify(payload.bills));
+          }
+
+          notifyListeners(payload);
+        }
+      } catch (err) {}
+    };
+
+    globalSse.onerror = () => {
+      try {
+        globalSse.close();
+      } catch (e) {}
+      if (globalSseReconnectTimer) clearTimeout(globalSseReconnectTimer);
+      globalSseReconnectTimer = setTimeout(connectGlobalSse, 6000);
+    };
+  } catch (err) {
+    globalSseReconnectTimer = setTimeout(connectGlobalSse, 6000);
+  }
+}
+
+function initGlobalSync() {
+  if (isInitialized || typeof window === "undefined") return;
+  isInitialized = true;
+
+  connectGlobalWs();
+  connectGlobalSse();
+
+  const handleClientEvent = (e) => {
+    if (e?.detail) {
+      notifyListeners(e.detail);
+    }
+  };
+
+  const handleStorageEvent = (e) => {
+    if (e.key === "spicy_last_event" && e.newValue) {
+      try {
+        const parsed = JSON.parse(e.newValue);
+        if (parsed) {
+          notifyListeners(parsed);
+        }
+      } catch (err) {}
+    }
+  };
+
+  const handleVisibilityOrFocus = () => {
+    const now = Date.now();
+    if (document.visibilityState === "visible" && now - lastSyncTimestamp > 4000) {
+      lastSyncTimestamp = now;
+      notifyListeners({ type: "SYNC_STATUS", timestamp: now });
+    }
+  };
+
+  const handleOnline = () => {
+    connectGlobalWs();
+    connectGlobalSse();
+    const now = Date.now();
+    if (now - lastSyncTimestamp > 4000) {
+      lastSyncTimestamp = now;
+      notifyListeners({ type: "SYNC_STATUS", timestamp: now });
+    }
+  };
+
+  window.addEventListener("spicy_ws_event", handleClientEvent);
+  window.addEventListener("storage", handleStorageEvent);
+  window.addEventListener("visibilitychange", handleVisibilityOrFocus);
+  window.addEventListener("focus", handleVisibilityOrFocus);
+  window.addEventListener("online", handleOnline);
+}
+
 export function useWebSocket(onEvent) {
-  const [isConnected, setIsConnected] = useState(true);
+  const [isConnected] = useState(() => globalIsConnected);
   const [lastMessage, setLastMessage] = useState(null);
-  const wsRef = useRef(null);
-  const sseRef = useRef(null);
-  const reconnectTimeoutRef = useRef(null);
   const onEventRef = useRef(onEvent);
 
   useEffect(() => {
     onEventRef.current = onEvent;
   }, [onEvent]);
 
-  // 1. Connect Local WebSocket (for local dev backend)
-  const connectLocalWs = useCallback(() => {
-    const wsUrl = getWsUrl();
-    if (!wsUrl || typeof window === "undefined") return;
-
-    try {
-      const ws = new WebSocket(wsUrl);
-      wsRef.current = ws;
-
-      ws.onopen = () => {
-        setIsConnected(true);
-        if (onEventRef.current) {
-          onEventRef.current({ type: "WS_RECONNECTED", timestamp: Date.now() });
-        }
-      };
-
-      ws.onmessage = (event) => {
-        try {
-          const payload = JSON.parse(event.data);
-          setLastMessage(payload);
-          if (onEventRef.current) {
-            onEventRef.current(payload);
-          }
-        } catch (e) {}
-      };
-
-      ws.onclose = () => {
-        setIsConnected(false);
-        reconnectTimeoutRef.current = setTimeout(connectLocalWs, 1500);
-      };
-
-      ws.onerror = () => {
-        try {
-          ws.close();
-        } catch (e) {}
-      };
-    } catch (err) {}
-  }, []);
-
-  // 2. Connect Cloud Realtime Stream (for instant Phone <-> PC Cross-Device Sync)
-  const connectCloudStream = useCallback(() => {
-    if (typeof window === "undefined" || typeof EventSource === "undefined") return;
-
-    try {
-      const sse = new EventSource(`https://ntfy.sh/${CLOUD_SYNC_TOPIC}/sse`);
-      sseRef.current = sse;
-
-      sse.onopen = () => {
-        setIsConnected(true);
-      };
-
-      sse.onmessage = (event) => {
-        try {
-          const raw = JSON.parse(event.data);
-          if (raw.event === "message" && raw.message) {
-            const payload = JSON.parse(raw.message);
-            const myDeviceId = getDeviceId();
-
-            // Ignore our own echo to avoid double processing
-            if (payload.senderDeviceId && payload.senderDeviceId === myDeviceId) {
-              return;
-            }
-
-            // Sync shared state data into local storage from the other device
-            if (payload.tables && Array.isArray(payload.tables)) {
-              localStorage.setItem("spicy_demo_tables", JSON.stringify(payload.tables));
-            }
-            if (payload.bookings && Array.isArray(payload.bookings)) {
-              localStorage.setItem("spicy_demo_bookings", JSON.stringify(payload.bookings));
-            }
-            if (payload.orders && Array.isArray(payload.orders)) {
-              localStorage.setItem("spicy_demo_orders", JSON.stringify(payload.orders));
-            }
-            if (payload.bills && Array.isArray(payload.bills)) {
-              localStorage.setItem("spicy_demo_bills", JSON.stringify(payload.bills));
-            }
-
-            // Trigger in-app listeners (Admin, Kitchen, Customer Booking, Menu)
-            setLastMessage(payload);
-            if (onEventRef.current) {
-              onEventRef.current(payload);
-            }
-          }
-        } catch (err) {}
-      };
-
-      sse.onerror = () => {
-        try {
-          sse.close();
-        } catch (e) {}
-        setTimeout(connectCloudStream, 5000);
-      };
-    } catch (err) {}
-  }, []);
-
   useEffect(() => {
-    connectLocalWs();
-    connectCloudStream();
+    initGlobalSync();
 
-    // Client event listener for standalone/hosted Vercel sync
-    const handleClientEvent = (e) => {
-      if (e?.detail && onEventRef.current) {
-        setLastMessage(e.detail);
-        onEventRef.current(e.detail);
+    const listener = (payload) => {
+      setLastMessage(payload);
+      if (onEventRef.current) {
+        onEventRef.current(payload);
       }
     };
 
-    const handleStorageEvent = (e) => {
-      if (e.key === "spicy_last_event" && e.newValue) {
-        try {
-          const parsed = JSON.parse(e.newValue);
-          if (parsed && onEventRef.current) {
-            setLastMessage(parsed);
-            onEventRef.current(parsed);
-          }
-        } catch (err) {}
-      }
-    };
-
-    let lastSyncTime = 0;
-    const handleVisibilityOrFocus = () => {
-      const now = Date.now();
-      if (document.visibilityState === "visible" && onEventRef.current && now - lastSyncTime > 4000) {
-        lastSyncTime = now;
-        onEventRef.current({ type: "SYNC_STATUS", timestamp: now });
-      }
-    };
-
-    const handleOnline = () => {
-      connectLocalWs();
-      const now = Date.now();
-      if (onEventRef.current && now - lastSyncTime > 4000) {
-        lastSyncTime = now;
-        onEventRef.current({ type: "SYNC_STATUS", timestamp: now });
-      }
-    };
-
-    window.addEventListener("spicy_ws_event", handleClientEvent);
-    window.addEventListener("storage", handleStorageEvent);
-    window.addEventListener("visibilitychange", handleVisibilityOrFocus);
-    window.addEventListener("focus", handleVisibilityOrFocus);
-    window.addEventListener("online", handleOnline);
-
+    listeners.add(listener);
     return () => {
-      window.removeEventListener("spicy_ws_event", handleClientEvent);
-      window.removeEventListener("storage", handleStorageEvent);
-      window.removeEventListener("visibilitychange", handleVisibilityOrFocus);
-      window.removeEventListener("focus", handleVisibilityOrFocus);
-      window.removeEventListener("online", handleOnline);
-      if (reconnectTimeoutRef.current) clearTimeout(reconnectTimeoutRef.current);
-      if (wsRef.current) wsRef.current.close();
-      if (sseRef.current) sseRef.current.close();
+      listeners.delete(listener);
     };
-  }, [connectLocalWs, connectCloudStream]);
+  }, []);
 
   const sendMessage = useCallback((type, data = {}) => {
-    if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
-      wsRef.current.send(JSON.stringify({ type, ...data }));
+    if (globalWs && globalWs.readyState === WebSocket.OPEN) {
+      globalWs.send(JSON.stringify({ type, ...data }));
     }
   }, []);
 

@@ -23,10 +23,10 @@ export function broadcastCloudEvent(eventPayload) {
   } catch (err) {}
 }
 
-// Resolve API base URL dynamically
+// Resolve API base URL dynamically for Dev, Production, and Custom Backends
 function resolveApiBaseUrl() {
   if (import.meta.env.VITE_API_URL) {
-    return import.meta.env.VITE_API_URL.replace(/\/$/, "") + "/api";
+    return import.meta.env.VITE_API_URL.replace(/\/$/, "").replace(/\/api$/, "") + "/api";
   }
   if (typeof window !== "undefined") {
     const hostname = window.location.hostname;
@@ -41,11 +41,24 @@ const API_BASE_URL = resolveApiBaseUrl();
 const IS_HOSTED_MODE = !API_BASE_URL;
 
 export function getWsUrl() {
-  if (typeof window === "undefined") return "ws://localhost:5000";
-  const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
-  const hostname = window.location.hostname;
-  if (hostname === "localhost" || hostname === "127.0.0.1") {
-    return `${protocol}//localhost:5000`;
+  if (import.meta.env.VITE_WS_URL) {
+    return import.meta.env.VITE_WS_URL;
+  }
+  if (import.meta.env.VITE_API_URL) {
+    const apiUrl = import.meta.env.VITE_API_URL.replace(/\/api$/, "");
+    if (apiUrl.startsWith("https://")) {
+      return apiUrl.replace("https://", "wss://");
+    }
+    if (apiUrl.startsWith("http://")) {
+      return apiUrl.replace("http://", "ws://");
+    }
+  }
+  if (typeof window !== "undefined") {
+    const hostname = window.location.hostname;
+    const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
+    if (hostname === "localhost" || hostname === "127.0.0.1") {
+      return `${protocol}//localhost:5000`;
+    }
   }
   return null;
 }
@@ -270,7 +283,6 @@ export async function hydrateFromCloudSync() {
           if (payload.bills && Array.isArray(payload.bills)) {
             setLocalDemoData("spicy_demo_bills", payload.bills);
           }
-          window.dispatchEvent(new CustomEvent("spicy_ws_event", { detail: payload }));
           break;
         }
       } catch (err) {}
