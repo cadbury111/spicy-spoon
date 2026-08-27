@@ -578,6 +578,9 @@ async function handleClientFallback(endpoint, options = {}, originalError) {
         items: sessionOrders.flatMap((o) => o.items || []),
       };
 
+      bills.unshift(previewBill);
+      setLocalDemoData("spicy_demo_bills", bills);
+
       return { bill: previewBill, session_id: sessionId || `SESSION-${tableNumber}-DEMO` };
     }
 
@@ -662,19 +665,34 @@ async function handleClientFallback(endpoint, options = {}, originalError) {
     }
 
     if (endpoint.includes("create")) {
-      const bills = getLocalDemoData("spicy_demo_bills", []);
+      let bills = getLocalDemoData("spicy_demo_bills", []);
       const billId = body.bill_id || body.billId;
-      const targetBill = bills.find((b) => b.id === billId) || null;
+      let targetBill = bills.find((b) => b.id === billId || b.id === Number(billId) || String(b.id) === String(billId)) || null;
 
       if (!targetBill) {
-        throw new Error("Bill not found for payment creation");
+        targetBill = bills.find((b) => b.status !== "PAID" && (b.table_number === body.table_number || b.session_id === body.session_id)) || null;
+      }
+
+      if (!targetBill) {
+        targetBill = {
+          id: billId || Date.now(),
+          bill_number: `INV-2026-${Math.floor(10000 + Math.random() * 90000)}`,
+          grand_total: body.amount || 897,
+          subtotal: body.amount || 897,
+          table_number: body.table_number || "T1",
+          status: "UNPAID",
+          payment_method: null,
+          created_at: new Date().toISOString(),
+        };
+        bills.unshift(targetBill);
+        setLocalDemoData("spicy_demo_bills", bills);
       }
 
       const txn = `TXN-${Date.now().toString().slice(-8)}`;
       const upiVpa = "spicyspoon@upi";
       const restaurantName = encodeURIComponent("Spicy Spoon Restaurant");
       const note = encodeURIComponent(`Bill ${targetBill.bill_number}`);
-      const amountStr = Number(targetBill.grand_total).toFixed(2);
+      const amountStr = Number(targetBill.grand_total || 0).toFixed(2);
       const upiIntentUrl = `upi://pay?pa=${upiVpa}&pn=${restaurantName}&am=${amountStr}&cu=INR&tn=${note}&tr=${txn}`;
 
       const upiQrCode = await generateQrDataUrl(upiIntentUrl);
