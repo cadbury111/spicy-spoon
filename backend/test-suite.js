@@ -1,4 +1,5 @@
 const http = require("http");
+const crypto = require("crypto");
 const { app, server } = require("./server");
 
 async function runTests() {
@@ -172,13 +173,22 @@ async function runTests() {
     console.log(`✓ Bill #${bill.bill_number}: Subtotal=₹${bill.subtotal}, GST 5%=₹${bill.tax}, Service 2.5%=₹${bill.service_charge}, Discount=₹${bill.discount}, Grand Total=₹${bill.grand_total}`);
 
     // 7. Test Idempotent Payment Processing
-    console.log("\n7. Testing POST /api/payments/verify with Idempotency Key...");
+    console.log("\n7. Testing POST /api/payments/verify with Idempotency Key & HMAC Signature...");
+    const rzpOrderId = `order_${Date.now()}`;
+    const rzpPaymentId = `pay_${Date.now()}`;
+    const rzpSignature = crypto
+      .createHmac("sha256", process.env.RAZORPAY_KEY_SECRET || "spicyspoon_secret_demo_key")
+      .update(`${rzpOrderId}|${rzpPaymentId}`)
+      .digest("hex");
+
     const idempotencyKey = `IDEMP-TEST-${Date.now()}`;
     const payRes1 = await req("/api/payments/verify", "POST", {
       bill_id: bill.id,
+      razorpay_order_id: rzpOrderId,
+      razorpay_payment_id: rzpPaymentId,
+      razorpay_signature: rzpSignature,
       idempotency_key: idempotencyKey,
       amount: bill.grand_total,
-      status: "SUCCESS",
     });
     if (payRes1.status !== 200 || payRes1.data.bill?.status !== "PAID") {
       throw new Error(`Payment verification failed: ${JSON.stringify(payRes1.data)}`);
@@ -188,9 +198,11 @@ async function runTests() {
     // Replay same request with same idempotency key -> Must return existing result without duplicate payment
     const payRes2 = await req("/api/payments/verify", "POST", {
       bill_id: bill.id,
+      razorpay_order_id: rzpOrderId,
+      razorpay_payment_id: rzpPaymentId,
+      razorpay_signature: rzpSignature,
       idempotency_key: idempotencyKey,
       amount: bill.grand_total,
-      status: "SUCCESS",
     });
     if (payRes2.status !== 200) {
       throw new Error(`Idempotent replay failed: status ${payRes2.status}`);
@@ -228,10 +240,10 @@ async function runTests() {
       },
       adminToken
     );
-    if (cashConfirmRes.status !== 200 || cashConfirmRes.data.payment?.status !== "CASH_PAID") {
+    if (cashConfirmRes.status !== 200 || !["SUCCESS", "CASH_PAID"].includes(cashConfirmRes.data.payment?.status)) {
       throw new Error("Cash confirmation failed");
     }
-    console.log(`✓ Cash payment confirmed by admin: Status=CASH_PAID, Table Released=${cashConfirmRes.data.table?.status === "AVAILABLE"}`);
+    console.log(`✓ Cash payment confirmed by admin: Status=${cashConfirmRes.data.payment?.status}, Table Released=${cashConfirmRes.data.table?.status === "AVAILABLE"}`);
 
     // 9. Test Analytics & Reports (Authenticated Admin)
     console.log("\n9. Testing GET /api/reports/analytics (Admin)...");

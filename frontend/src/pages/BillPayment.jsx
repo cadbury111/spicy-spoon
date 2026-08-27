@@ -52,6 +52,10 @@ function BillPayment({ billId = null, tableParam = null, sessionParam = null }) 
   });
 
   const pollTimerRef = useRef(null);
+  const billRef = useRef(bill);
+  useEffect(() => {
+    billRef.current = bill;
+  }, [bill]);
 
   // Table identifier from URL or query
   const targetTable = useMemo(() => {
@@ -79,25 +83,26 @@ function BillPayment({ billId = null, tableParam = null, sessionParam = null }) 
 
   const handlePaymentSuccess = useCallback(
     (receiptData) => {
+      const currentBill = billRef.current;
       // 1. Show immediate Payment Successful / Bill Settled Celebration Modal
       const exactAmount = Number(
         receiptData?.bill?.grand_total ||
           receiptData?.amount ||
           receiptData?.grand_total ||
-          bill?.grand_total ||
+          currentBill?.grand_total ||
           0
       ).toFixed(2);
 
       const invoiceNumber =
         receiptData?.bill?.bill_number ||
         receiptData?.bill_number ||
-        bill?.bill_number ||
+        currentBill?.bill_number ||
         "LIVE";
 
       const tableNum =
         receiptData?.bill?.table_number ||
         receiptData?.table_number ||
-        bill?.table_number ||
+        currentBill?.table_number ||
         targetTable;
 
       setSettlementCelebration({
@@ -114,9 +119,9 @@ function BillPayment({ billId = null, tableParam = null, sessionParam = null }) 
       localStorage.removeItem(`spicy_session_${targetTable}`);
 
       // 2. Double-check latest bill from server
-      if (bill?.id) {
+      if (currentBill?.id) {
         api
-          .getBill(bill.id)
+          .getBill(currentBill.id)
           .then((freshBill) => {
             if (freshBill) setBill(freshBill);
           })
@@ -130,7 +135,7 @@ function BillPayment({ billId = null, tableParam = null, sessionParam = null }) 
         setSettlementCelebration(null);
       }, 1800);
     },
-    [targetTable, bill, selectedMethod]
+    [targetTable, selectedMethod]
   );
 
   // 1. Fetch or Generate Live Bill
@@ -185,7 +190,7 @@ function BillPayment({ billId = null, tableParam = null, sessionParam = null }) 
     } finally {
       setLoading(false);
     }
-  }, [billId, targetTable, targetSession, discountCode, handlePaymentSuccess]);
+  }, [billId, targetTable, targetSession, discountCode]);
 
   useEffect(() => {
     fetchLiveBill();
@@ -195,12 +200,13 @@ function BillPayment({ billId = null, tableParam = null, sessionParam = null }) 
   const handleWsEvent = useCallback(
     async (event) => {
       if (!event) return;
+      const currentBill = billRef.current;
 
       // Handle Reconnection & Screen Focus
       if (event.type === "SYNC_STATUS" || event.type === "WS_RECONNECTED") {
-        if (bill?.id && !paymentSuccess) {
+        if (currentBill?.id) {
           try {
-            const freshBill = await api.getBill(bill.id);
+            const freshBill = await api.getBill(currentBill.id);
             if (freshBill && freshBill.status === "PAID") {
               handlePaymentSuccess({
                 restaurant_name: freshBill.restaurant_name || "Spicy Spoon",
@@ -212,7 +218,7 @@ function BillPayment({ billId = null, tableParam = null, sessionParam = null }) 
                   transaction_id: freshBill.payment?.transaction_id || "VERIFIED-TXN",
                   amount: freshBill.grand_total,
                 },
-                items: freshBill.items || bill.items || [],
+                items: freshBill.items || currentBill.items || [],
               });
             }
           } catch (e) {}
@@ -226,8 +232,8 @@ function BillPayment({ billId = null, tableParam = null, sessionParam = null }) 
       const eventTable = event.data?.table_number || event.data?.bill?.table_number || event.data?.table?.table_number;
 
       const isMyBill =
-        (bill?.id && eventBillId === bill.id) ||
-        (bill?.bill_number && eventBillNum === bill.bill_number) ||
+        (currentBill?.id && eventBillId === currentBill.id) ||
+        (currentBill?.bill_number && eventBillNum === currentBill.bill_number) ||
         (targetSession && eventSession === targetSession) ||
         (targetTable && eventTable === targetTable);
 
@@ -249,11 +255,11 @@ function BillPayment({ billId = null, tableParam = null, sessionParam = null }) 
         setCashRequested(true);
       }
 
-      if (event.type === "BILL_GENERATED" && event.data?.id === bill?.id) {
+      if (event.type === "BILL_GENERATED" && event.data?.id === currentBill?.id) {
         setBill(event.data);
       }
     },
-    [bill, targetSession, targetTable, handlePaymentSuccess, paymentSuccess, selectedMethod]
+    [targetSession, targetTable, handlePaymentSuccess, selectedMethod]
   );
 
   useWebSocket(handleWsEvent);
