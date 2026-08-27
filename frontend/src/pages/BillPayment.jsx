@@ -179,7 +179,7 @@ function BillPayment({ billId = null, tableParam = null, sessionParam = null, or
       const txn = `TXN-${bNum || Date.now().toString().slice(-6)}`;
       const note = encodeURIComponent(`Bill ${bill.bill_number || "Payment"}`);
       const restaurantName = encodeURIComponent("Spicy Spoon Restaurant");
-      const upiUrl = `upi://pay?pa=spicyspoon@upi&pn=${restaurantName}&am=${Number(bill.grand_total).toFixed(2)}&cu=INR&tn=${note}&tr=${txn}`;
+      const upiUrl = `upi://pay?pa=cadbury470@oksbi&pn=${restaurantName}&am=${Number(bill.grand_total).toFixed(2)}&cu=INR&tn=${note}&tr=${txn}`;
 
       QRCode.toDataURL(upiUrl, {
         width: 450,
@@ -790,7 +790,7 @@ function BillPayment({ billId = null, tableParam = null, sessionParam = null, or
                     <div className="upi-qr-display">
                       <img src={paymentData?.upiQrCode || upiQrDataUrl} alt="Live UPI QR" className="live-qr-img" />
                       <p className="upi-vpa-tag">
-                        UPI ID: <strong>spicyspoon@upi</strong>
+                        UPI ID: <strong>cadbury470@oksbi</strong>
                       </p>
                       <span className="amount-pill">Pay ₹{Number(bill.grand_total).toFixed(2)}</span>
                     </div>

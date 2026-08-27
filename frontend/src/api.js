@@ -721,7 +721,7 @@ async function handleClientFallback(endpoint, options = {}, originalError) {
       }
 
       const txn = `TXN-${Date.now().toString().slice(-8)}`;
-      const upiVpa = "spicyspoon@upi";
+      const upiVpa = "cadbury470@oksbi";
       const restaurantName = encodeURIComponent("Spicy Spoon Restaurant");
       const note = encodeURIComponent(`Bill ${targetBill.bill_number}`);
       const amountStr = Number(targetBill.grand_total || 0).toFixed(2);

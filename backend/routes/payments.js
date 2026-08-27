@@ -205,7 +205,7 @@ router.post("/create", async (req, res) => {
         let upiDataUrl = null;
         let upiIntentUrl = null;
         if (existingPayment.payment_method === "UPI") {
-          const upiVpa = "spicyspoon@upi";
+          const upiVpa = "cadbury470@oksbi";
           const restaurantName = encodeURIComponent("Spicy Spoon Restaurant");
           const note = encodeURIComponent(`Bill ${bill.bill_number}`);
           upiIntentUrl = `upi://pay?pa=${upiVpa}&pn=${restaurantName}&am=${bill.grand_total.toFixed(2)}&cu=INR&tn=${note}&tr=${existingPayment.transaction_id}`;
@@ -248,7 +248,7 @@ router.post("/create", async (req, res) => {
     let upiIntentUrl = null;
 
     if (method === "UPI") {
-      const upiVpa = "spicyspoon@upi";
+      const upiVpa = "cadbury470@oksbi";
       const restaurantName = encodeURIComponent("Spicy Spoon Restaurant");
       const note = encodeURIComponent(`Bill ${bill.bill_number}`);
       upiIntentUrl = `upi://pay?pa=${upiVpa}&pn=${restaurantName}&am=${bill.grand_total.toFixed(2)}&cu=INR&tn=${note}&tr=${transactionId}`;

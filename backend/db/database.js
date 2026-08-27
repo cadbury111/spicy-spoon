@@ -441,7 +441,7 @@ if (settingsCount === 0) {
   insertSetting.run("service_charge_rate", "2.5");
   insertSetting.run("booking_duration_mins", "90");
   insertSetting.run("payment_mode", process.env.PAYMENT_MODE || "DEV_SANDBOX");
-  insertSetting.run("upi_vpa", "spicyspoon@upi");
+  insertSetting.run("upi_vpa", "cadbury470@oksbi");
 }
 
 console.log("Database initialized and verified successfully.");

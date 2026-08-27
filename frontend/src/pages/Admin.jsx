@@ -1147,7 +1147,7 @@ function Admin({ onLogout }) {
                 </div>
                 <div className="field-group">
                   <label>UPI Merchant VPA</label>
-                  <input type="text" value="spicyspoon@upi" readOnly />
+                  <input type="text" value="cadbury470@oksbi" readOnly />
                 </div>
               </div>
             </div>
