@@ -36,12 +36,13 @@ router.get("/", (req, res) => {
 // Get Live Bill for Active Session or Table (before payment)
 router.get("/live", (req, res) => {
   try {
-    const { tableId, tableNumber, sessionId } = req.query;
+    const { tableId, tableNumber, sessionId, orderId } = req.query;
 
     let targetSessionId = sessionId;
+    let targetOrderId = Number(orderId);
     let table;
 
-    if (!targetSessionId) {
+    if (!targetSessionId && !targetOrderId) {
       if (tableId) {
         table = db.prepare("SELECT * FROM restaurant_tables WHERE id = ?").get(Number(tableId));
       } else if (tableNumber) {
@@ -57,29 +58,38 @@ router.get("/live", (req, res) => {
       }
     }
 
-    if (!targetSessionId && !table) {
-      return res.status(400).json({ message: "tableId, tableNumber, or sessionId is required" });
+    if (!targetSessionId && !targetOrderId && !table) {
+      return res.status(400).json({ message: "tableId, tableNumber, orderId, or sessionId is required" });
     }
 
-    // Check if finalized bill already exists
+    // Check if finalized bill already exists for this exact order or session
     let existingBill = null;
-    if (targetSessionId) {
+    if (targetOrderId) {
+      existingBill = db.prepare("SELECT * FROM bills WHERE order_id = ? ORDER BY id DESC").get(targetOrderId);
+    } else if (targetSessionId) {
       existingBill = db.prepare("SELECT * FROM bills WHERE session_id = ? ORDER BY id DESC").get(targetSessionId);
     }
 
-    // Find all active unpaid orders for this active dining session
+    // Find active unpaid order(s)
     let activeOrders = [];
-    if (targetSessionId) {
+    if (targetOrderId) {
+      activeOrders = db.prepare(`
+        SELECT * FROM orders
+        WHERE id = ? AND status NOT IN ('CANCELLED', 'COMPLETED', 'PAID')
+      `).all(targetOrderId);
+    } else if (targetSessionId) {
       activeOrders = db.prepare(`
         SELECT * FROM orders
         WHERE session_id = ? AND status NOT IN ('CANCELLED', 'COMPLETED', 'PAID')
-        ORDER BY id ASC
+        ORDER BY id DESC
+        LIMIT 1
       `).all(targetSessionId);
     } else if (table) {
       activeOrders = db.prepare(`
         SELECT * FROM orders
         WHERE table_id = ? AND status NOT IN ('COMPLETED', 'CANCELLED', 'PAID')
-        ORDER BY id ASC
+        ORDER BY id DESC
+        LIMIT 1
       `).all(table.id);
     }
 
@@ -217,28 +227,31 @@ router.post("/generate", (req, res) => {
       }
     }
 
-    // Find orders to aggregate (only active unpaid orders)
+    // Find orders to aggregate (prioritize specific order)
     let ordersToBill = [];
-    if (targetSessionId) {
+    if (targetOrderId) {
+      const singleOrder = db.prepare("SELECT * FROM orders WHERE id = ?").get(targetOrderId);
+      if (singleOrder && !['CANCELLED', 'COMPLETED', 'PAID'].includes(singleOrder.status)) {
+        ordersToBill = [singleOrder];
+        targetSessionId = singleOrder.session_id;
+      }
+    } else if (targetSessionId) {
       ordersToBill = db.prepare(`
         SELECT * FROM orders
         WHERE session_id = ? AND status NOT IN ('CANCELLED', 'COMPLETED', 'PAID')
+        ORDER BY id DESC
+        LIMIT 1
       `).all(targetSessionId);
-    } else if (targetOrderId) {
-      const singleOrder = db.prepare("SELECT * FROM orders WHERE id = ?").get(targetOrderId);
-      if (singleOrder && !['CANCELLED', 'COMPLETED', 'PAID'].includes(singleOrder.status)) {
-        targetSessionId = singleOrder.session_id;
-        ordersToBill = db.prepare(`
-          SELECT * FROM orders
-          WHERE session_id = ? AND status NOT IN ('CANCELLED', 'COMPLETED', 'PAID')
-        `).all(targetSessionId);
-        if (ordersToBill.length === 0) ordersToBill = [singleOrder];
-      }
     } else if (table) {
-      ordersToBill = db.prepare(`
+      const latestOrder = db.prepare(`
         SELECT * FROM orders
         WHERE table_id = ? AND status NOT IN ('CANCELLED', 'COMPLETED', 'PAID')
-      `).all(table.id);
+        ORDER BY id DESC
+        LIMIT 1
+      `).get(table.id);
+      if (latestOrder) {
+        ordersToBill = [latestOrder];
+      }
     }
 
     if (ordersToBill.length === 0) {

@@ -26,7 +26,7 @@ import { api } from "../api";
 import { useWebSocket } from "../hooks/useWebSocket";
 import "./BillPayment.css";
 
-function BillPayment({ billId = null, tableParam = null, sessionParam = null }) {
+function BillPayment({ billId = null, tableParam = null, sessionParam = null, orderParam = null }) {
   const [bill, setBill] = useState(null);
   const [loading, setLoading] = useState(true);
   const [errorMessage, setErrorMessage] = useState("");
@@ -77,6 +77,12 @@ function BillPayment({ billId = null, tableParam = null, sessionParam = null }) 
     const params = new URLSearchParams(window.location.hash.split("?")[1] || window.location.search);
     return params.get("session") || localStorage.getItem(`spicy_session_${targetTable}`);
   }, [sessionParam, targetTable]);
+
+  const targetOrderId = useMemo(() => {
+    if (orderParam) return orderParam;
+    const params = new URLSearchParams(window.location.hash.split("?")[1] || window.location.search);
+    return params.get("orderId") || params.get("order") || null;
+  }, [orderParam]);
 
   const triggerConfetti = () => {
     try {
@@ -239,6 +245,7 @@ function BillPayment({ billId = null, tableParam = null, sessionParam = null }) 
         const liveRes = await api.getLiveBill({
           tableNumber: targetTable,
           sessionId: targetSession,
+          orderId: targetOrderId,
         });
 
         if (liveRes.bill && liveRes.bill.id) {
@@ -247,6 +254,7 @@ function BillPayment({ billId = null, tableParam = null, sessionParam = null }) 
           const genRes = await api.generateBill({
             tableNumber: targetTable,
             session_id: targetSession || liveRes.session_id,
+            order_id: targetOrderId || undefined,
             discount_code: discountCode || undefined,
           });
           billResult = genRes.bill;

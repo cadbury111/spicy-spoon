@@ -460,12 +460,14 @@ async function handleClientFallback(endpoint, options = {}, originalError) {
       const urlObj = new URL(`http://dummy${endpoint}`);
       const tableNumber = (urlObj.searchParams.get("tableNumber") || "T1").replace(/^Table\s*/i, "").trim();
       const sessionId = urlObj.searchParams.get("sessionId");
+      const orderId = urlObj.searchParams.get("orderId") || urlObj.searchParams.get("order");
 
       const existingBill = bills.find(
         (b) =>
           b.status !== "PAID" &&
-          ((sessionId && b.session_id === sessionId) ||
-           (!sessionId && (b.table_number === tableNumber || b.table_number === `T${tableNumber.replace(/^T/i, "")}`)))
+          ((orderId && (String(b.order_id) === String(orderId) || String(b.orderId) === String(orderId))) ||
+           (sessionId && b.session_id === sessionId) ||
+           (!sessionId && !orderId && (b.table_number === tableNumber || b.table_number === `T${tableNumber.replace(/^T/i, "")}`)))
       );
 
       if (existingBill) {
@@ -473,14 +475,36 @@ async function handleClientFallback(endpoint, options = {}, originalError) {
       }
 
       const allOrders = getLocalDemoData("spicy_demo_orders", INITIAL_DEMO_ORDERS);
-      const sessionOrders = allOrders.filter(
-        (o) =>
-          o.status !== "COMPLETED" &&
-          o.status !== "PAID" &&
-          o.status !== "CANCELLED" &&
-          ((sessionId && o.session_id === sessionId) ||
-           (!sessionId && (o.table_number === tableNumber || o.tableNumber === tableNumber || o.table_number === `T${tableNumber.replace(/^T/i, "")}`)))
-      );
+      let sessionOrders = [];
+
+      if (orderId && orderId !== "undefined" && orderId !== "null") {
+        sessionOrders = allOrders.filter(
+          (o) =>
+            o.status !== "COMPLETED" &&
+            o.status !== "PAID" &&
+            o.status !== "CANCELLED" &&
+            (String(o.id) === String(orderId) || String(o.order_number) === String(orderId))
+        );
+      } else if (sessionId && sessionId !== "undefined" && sessionId !== "null") {
+        sessionOrders = allOrders.filter(
+          (o) =>
+            o.status !== "COMPLETED" &&
+            o.status !== "PAID" &&
+            o.status !== "CANCELLED" &&
+            o.session_id === sessionId
+        );
+      } else {
+        const matchingTableOrders = allOrders.filter(
+          (o) =>
+            o.status !== "COMPLETED" &&
+            o.status !== "PAID" &&
+            o.status !== "CANCELLED" &&
+            (o.table_number === tableNumber || o.tableNumber === tableNumber || o.table_number === `T${tableNumber.replace(/^T/i, "")}`)
+        );
+        if (matchingTableOrders.length > 0) {
+          sessionOrders = [matchingTableOrders[0]];
+        }
+      }
 
       if (sessionOrders.length === 0) {
         return { bill: null, session_id: sessionId || `SESSION-${tableNumber}-DEMO` };
@@ -494,7 +518,8 @@ async function handleClientFallback(endpoint, options = {}, originalError) {
       const previewBill = {
         id: Date.now(),
         bill_number: `INV-2026-${Math.floor(10000 + Math.random() * 90000)}`,
-        session_id: sessionId || `SESSION-${tableNumber}-DEMO`,
+        session_id: sessionId || sessionOrders[0]?.session_id || `SESSION-${tableNumber}-DEMO`,
+        order_id: sessionOrders[0]?.id || null,
         table_number: tableNumber,
         subtotal,
         discount: 0,
@@ -511,25 +536,46 @@ async function handleClientFallback(endpoint, options = {}, originalError) {
       bills.unshift(previewBill);
       setLocalDemoData("spicy_demo_bills", bills);
 
-      return { bill: previewBill, session_id: sessionId || `SESSION-${tableNumber}-DEMO` };
+      return { bill: previewBill, session_id: sessionId || previewBill.session_id };
     }
 
     // 4b. Explicit Bill Generation (POST - Mutates database and broadcasts event)
     if (method === "POST" && (endpoint.startsWith("/bills/generate") || endpoint === "/bills")) {
       const tableNumber = (body.tableNumber || body.table_number || "T1").replace(/^Table\s*/i, "").trim();
-      const sessionId = body.session_id || body.sessionId || `SESSION-${tableNumber}-${Date.now().toString().slice(-6)}`;
+      const sessionId = body.session_id || body.sessionId;
+      const orderId = body.order_id || body.orderId;
 
       const allOrders = getLocalDemoData("spicy_demo_orders", INITIAL_DEMO_ORDERS);
-      const sessionOrders = allOrders.filter(
-        (o) =>
-          o.status !== "COMPLETED" &&
-          o.status !== "PAID" &&
-          o.status !== "CANCELLED" &&
-          (o.session_id === sessionId ||
-           o.table_number === tableNumber ||
-           o.tableNumber === tableNumber ||
-           o.table_number === `T${tableNumber.replace(/^T/i, "")}`)
-      );
+      let sessionOrders = [];
+
+      if (orderId && orderId !== "undefined" && orderId !== "null") {
+        sessionOrders = allOrders.filter(
+          (o) =>
+            o.status !== "COMPLETED" &&
+            o.status !== "PAID" &&
+            o.status !== "CANCELLED" &&
+            (String(o.id) === String(orderId) || String(o.order_number) === String(orderId))
+        );
+      } else if (sessionId && sessionId !== "undefined" && sessionId !== "null") {
+        sessionOrders = allOrders.filter(
+          (o) =>
+            o.status !== "COMPLETED" &&
+            o.status !== "PAID" &&
+            o.status !== "CANCELLED" &&
+            o.session_id === sessionId
+        );
+      } else {
+        const matchingTableOrders = allOrders.filter(
+          (o) =>
+            o.status !== "COMPLETED" &&
+            o.status !== "PAID" &&
+            o.status !== "CANCELLED" &&
+            (o.table_number === tableNumber || o.tableNumber === tableNumber || o.table_number === `T${tableNumber.replace(/^T/i, "")}`)
+        );
+        if (matchingTableOrders.length > 0) {
+          sessionOrders = [matchingTableOrders[0]];
+        }
+      }
 
       if (sessionOrders.length === 0) {
         return { bill: null, session_id: sessionId, message: "No active orders found for this table." };
@@ -549,7 +595,8 @@ async function handleClientFallback(endpoint, options = {}, originalError) {
       const liveBill = {
         id: Date.now(),
         bill_number: billNumber,
-        session_id: sessionId,
+        session_id: sessionId || sessionOrders[0]?.session_id || `SESSION-${tableNumber}-${Date.now().toString().slice(-6)}`,
+        order_id: sessionOrders[0]?.id || null,
         table_number: tableNumber,
         subtotal,
         discount: discountAmount,

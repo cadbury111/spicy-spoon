@@ -71,7 +71,6 @@ function CustomerMenu() {
     return (
       params.get("session") ||
       localStorage.getItem(`spicy_session_${tableNumber}`) ||
-      localStorage.getItem("spicy_last_session") ||
       null
     );
   });
@@ -477,7 +476,7 @@ function CustomerMenu() {
               <button
                 className="view-bill-btn"
                 onClick={() => {
-                  window.location.hash = `#/bill?table=${tableNumber}&session=${activeSessionId || latestOrder?.session_id || ""}`;
+                  window.location.hash = `#/bill?table=${tableNumber}&orderId=${latestOrder?.id || ""}&session=${activeSessionId || latestOrder?.session_id || ""}`;
                 }}
               >
                 <Receipt size={16} />
