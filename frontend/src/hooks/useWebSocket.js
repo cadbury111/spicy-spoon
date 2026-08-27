@@ -120,12 +120,81 @@ function connectGlobalSse() {
   }
 }
 
+async function pollHistoricalCloudEvents() {
+  if (typeof window === "undefined") return;
+  try {
+    const res = await fetch(`https://ntfy.sh/${CLOUD_SYNC_TOPIC}/json?poll=1`).catch(() => null);
+    if (!res || !res.ok) return;
+    const text = await res.text();
+    const lines = text.split("\n").filter((l) => l.trim());
+
+    let latestOrders = null;
+    let latestTables = null;
+    let latestBookings = null;
+    let latestBills = null;
+    let lastEvent = null;
+
+    for (const line of lines) {
+      try {
+        const raw = JSON.parse(line);
+        if (raw.event === "message" && raw.message) {
+          const payload = JSON.parse(raw.message);
+          if (payload.type) lastEvent = payload;
+
+          if (payload.orders && Array.isArray(payload.orders)) {
+            latestOrders = payload.orders;
+          }
+          if (payload.tables && Array.isArray(payload.tables)) {
+            latestTables = payload.tables;
+          }
+          if (payload.bookings && Array.isArray(payload.bookings)) {
+            latestBookings = payload.bookings;
+          }
+          if (payload.bills && Array.isArray(payload.bills)) {
+            latestBills = payload.bills;
+          }
+        }
+      } catch (e) {}
+    }
+
+    let hasChanges = false;
+
+    if (latestOrders && Array.isArray(latestOrders) && latestOrders.length > 0) {
+      const existing = JSON.parse(localStorage.getItem("spicy_demo_orders") || "[]");
+      const map = new Map();
+      existing.forEach((o) => map.set(String(o.id || o.order_number), o));
+      latestOrders.forEach((o) => map.set(String(o.id || o.order_number), o));
+      const merged = Array.from(map.values()).sort((a, b) => (b.id || 0) - (a.id || 0));
+      localStorage.setItem("spicy_demo_orders", JSON.stringify(merged));
+      hasChanges = true;
+    }
+
+    if (latestTables && Array.isArray(latestTables) && latestTables.length > 0) {
+      localStorage.setItem("spicy_demo_tables", JSON.stringify(latestTables));
+      hasChanges = true;
+    }
+    if (latestBookings && Array.isArray(latestBookings) && latestBookings.length > 0) {
+      localStorage.setItem("spicy_demo_bookings", JSON.stringify(latestBookings));
+      hasChanges = true;
+    }
+    if (latestBills && Array.isArray(latestBills) && latestBills.length > 0) {
+      localStorage.setItem("spicy_demo_bills", JSON.stringify(latestBills));
+      hasChanges = true;
+    }
+
+    if (hasChanges) {
+      notifyListeners(lastEvent || { type: "NEW_ORDER", timestamp: Date.now() });
+    }
+  } catch (err) {}
+}
+
 function initGlobalSync() {
   if (isInitialized || typeof window === "undefined") return;
   isInitialized = true;
 
   connectGlobalWs();
   connectGlobalSse();
+  pollHistoricalCloudEvents();
 
   const handleClientEvent = (e) => {
     if (e?.detail) {
@@ -146,6 +215,7 @@ function initGlobalSync() {
 
   const handleVisibilityOrFocus = () => {
     const now = Date.now();
+    pollHistoricalCloudEvents();
     if (document.visibilityState === "visible" && now - lastSyncTimestamp > 4000) {
       lastSyncTimestamp = now;
       notifyListeners({ type: "SYNC_STATUS", timestamp: now });
@@ -155,6 +225,7 @@ function initGlobalSync() {
   const handleOnline = () => {
     connectGlobalWs();
     connectGlobalSse();
+    pollHistoricalCloudEvents();
     const now = Date.now();
     if (now - lastSyncTimestamp > 4000) {
       lastSyncTimestamp = now;
@@ -173,6 +244,10 @@ export function useWebSocket(onEvent) {
   const [isConnected] = useState(() => globalIsConnected);
   const [lastMessage, setLastMessage] = useState(null);
   const onEventRef = useRef(onEvent);
+
+  useEffect(() => {
+    pollHistoricalCloudEvents();
+  }, []);
 
   useEffect(() => {
     onEventRef.current = onEvent;
