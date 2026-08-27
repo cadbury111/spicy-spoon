@@ -26,6 +26,9 @@ export function useWebSocket(onEvent) {
 
       ws.onopen = () => {
         setIsConnected(true);
+        if (onEventRef.current) {
+          onEventRef.current({ type: "WS_RECONNECTED", timestamp: Date.now() });
+        }
       };
 
       ws.onmessage = (event) => {
@@ -39,7 +42,8 @@ export function useWebSocket(onEvent) {
       };
 
       ws.onclose = () => {
-        reconnectTimeoutRef.current = setTimeout(connectLocalWs, 4000);
+        setIsConnected(false);
+        reconnectTimeoutRef.current = setTimeout(connectLocalWs, 1500);
       };
 
       ws.onerror = () => {
@@ -130,12 +134,31 @@ export function useWebSocket(onEvent) {
       }
     };
 
+    const handleVisibilityOrFocus = () => {
+      if (document.visibilityState === "visible" && onEventRef.current) {
+        onEventRef.current({ type: "SYNC_STATUS", timestamp: Date.now() });
+      }
+    };
+
+    const handleOnline = () => {
+      connectLocalWs();
+      if (onEventRef.current) {
+        onEventRef.current({ type: "SYNC_STATUS", timestamp: Date.now() });
+      }
+    };
+
     window.addEventListener("spicy_ws_event", handleClientEvent);
     window.addEventListener("storage", handleStorageEvent);
+    window.addEventListener("visibilitychange", handleVisibilityOrFocus);
+    window.addEventListener("focus", handleVisibilityOrFocus);
+    window.addEventListener("online", handleOnline);
 
     return () => {
       window.removeEventListener("spicy_ws_event", handleClientEvent);
       window.removeEventListener("storage", handleStorageEvent);
+      window.removeEventListener("visibilitychange", handleVisibilityOrFocus);
+      window.removeEventListener("focus", handleVisibilityOrFocus);
+      window.removeEventListener("online", handleOnline);
       if (reconnectTimeoutRef.current) clearTimeout(reconnectTimeoutRef.current);
       if (wsRef.current) wsRef.current.close();
       if (sseRef.current) sseRef.current.close();

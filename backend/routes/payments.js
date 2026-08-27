@@ -465,10 +465,27 @@ router.post("/verify", (req, res) => {
 
     const fullReceipt = buildReceipt(payment.bill_id, payment.id);
 
+    const successEventPayload = {
+      bill_id: fullReceipt.bill.id,
+      bill_number: fullReceipt.bill.bill_number,
+      table_number: fullReceipt.bill.table_number,
+      session_id: fullReceipt.bill.session_id,
+      amount: fullReceipt.bill.grand_total,
+      grand_total: fullReceipt.bill.grand_total,
+      payment_method: fullReceipt.payment.payment_method,
+      transaction_id: fullReceipt.payment.transaction_id,
+      status: "SUCCESS",
+      receipt: fullReceipt,
+      bill: fullReceipt.bill,
+      payment: fullReceipt.payment,
+      table: fullReceipt.table,
+    };
+
     // Broadcast Real-time Events
-    broadcast("PAYMENT_VERIFIED", fullReceipt);
-    broadcast("BILL_PAID", fullReceipt);
-    broadcast("PAYMENT_COMPLETED", fullReceipt);
+    broadcast("PAYMENT_SUCCESS", successEventPayload);
+    broadcast("PAYMENT_VERIFIED", successEventPayload);
+    broadcast("BILL_PAID", successEventPayload);
+    broadcast("PAYMENT_COMPLETED", successEventPayload);
     broadcast("TABLE_STATUS_UPDATED", fullReceipt.table);
 
     res.json({
@@ -557,9 +574,27 @@ router.post("/webhook", (req, res) => {
         `).run(payment.table_id);
 
         const fullReceipt = buildReceipt(payment.bill_id, payment.id);
-        broadcast("PAYMENT_VERIFIED", fullReceipt);
-        broadcast("BILL_PAID", fullReceipt);
-        broadcast("PAYMENT_COMPLETED", fullReceipt);
+
+        const successEventPayload = {
+          bill_id: fullReceipt.bill.id,
+          bill_number: fullReceipt.bill.bill_number,
+          table_number: fullReceipt.bill.table_number,
+          session_id: fullReceipt.bill.session_id,
+          amount: fullReceipt.bill.grand_total,
+          grand_total: fullReceipt.bill.grand_total,
+          payment_method: fullReceipt.payment.payment_method,
+          transaction_id: fullReceipt.payment.transaction_id,
+          status: "SUCCESS",
+          receipt: fullReceipt,
+          bill: fullReceipt.bill,
+          payment: fullReceipt.payment,
+          table: fullReceipt.table,
+        };
+
+        broadcast("PAYMENT_SUCCESS", successEventPayload);
+        broadcast("PAYMENT_VERIFIED", successEventPayload);
+        broadcast("BILL_PAID", successEventPayload);
+        broadcast("PAYMENT_COMPLETED", successEventPayload);
         broadcast("TABLE_STATUS_UPDATED", fullReceipt.table);
       }
     } else if (event === "payment.failed") {
@@ -627,11 +662,28 @@ router.post("/cash-confirm", verifyStaffAuth(["ADMIN"]), (req, res) => {
 
     const fullReceipt = buildReceipt(payment.bill_id, payment.id);
 
+    const successEventPayload = {
+      bill_id: fullReceipt.bill.id,
+      bill_number: fullReceipt.bill.bill_number,
+      table_number: fullReceipt.bill.table_number,
+      session_id: fullReceipt.bill.session_id,
+      amount: fullReceipt.bill.grand_total,
+      grand_total: fullReceipt.bill.grand_total,
+      payment_method: fullReceipt.payment.payment_method,
+      transaction_id: fullReceipt.payment.transaction_id,
+      status: "SUCCESS",
+      receipt: fullReceipt,
+      bill: fullReceipt.bill,
+      payment: fullReceipt.payment,
+      table: fullReceipt.table,
+    };
+
     // Broadcast Real-time Events
-    broadcast("CASH_PAYMENT_CONFIRMED", fullReceipt);
-    broadcast("PAYMENT_VERIFIED", fullReceipt);
-    broadcast("BILL_PAID", fullReceipt);
-    broadcast("PAYMENT_COMPLETED", fullReceipt);
+    broadcast("PAYMENT_SUCCESS", successEventPayload);
+    broadcast("CASH_PAYMENT_CONFIRMED", successEventPayload);
+    broadcast("PAYMENT_VERIFIED", successEventPayload);
+    broadcast("BILL_PAID", successEventPayload);
+    broadcast("PAYMENT_COMPLETED", successEventPayload);
     broadcast("TABLE_STATUS_UPDATED", fullReceipt.table);
 
     res.json({

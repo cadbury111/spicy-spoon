@@ -36,6 +36,7 @@ function BillPayment({ billId = null, tableParam = null, sessionParam = null }) 
   const [isProcessing, setIsProcessing] = useState(false);
   const [paymentSuccess, setPaymentSuccess] = useState(false);
   const [verifiedReceipt, setVerifiedReceipt] = useState(null);
+  const [settlementCelebration, setSettlementCelebration] = useState(null);
   const [cashRequested, setCashRequested] = useState(false);
 
   // Discount
@@ -68,23 +69,68 @@ function BillPayment({ billId = null, tableParam = null, sessionParam = null }) 
   const triggerConfetti = () => {
     try {
       confetti({
-        particleCount: 120,
-        spread: 80,
-        origin: { y: 0.5 },
-        colors: ["#ff4500", "#ff8c00", "#ffd700", "#10b981"],
+        particleCount: 140,
+        spread: 90,
+        origin: { y: 0.45 },
+        colors: ["#ff4500", "#ff8c00", "#ffd700", "#10b981", "#3b82f6"],
       });
     } catch (e) {}
   };
 
   const handlePaymentSuccess = useCallback(
     (receiptData) => {
-      setPaymentSuccess(true);
-      setVerifiedReceipt(receiptData);
+      // 1. Show immediate Payment Successful / Bill Settled Celebration Modal
+      const exactAmount = Number(
+        receiptData?.bill?.grand_total ||
+          receiptData?.amount ||
+          receiptData?.grand_total ||
+          bill?.grand_total ||
+          0
+      ).toFixed(2);
+
+      const invoiceNumber =
+        receiptData?.bill?.bill_number ||
+        receiptData?.bill_number ||
+        bill?.bill_number ||
+        "LIVE";
+
+      const tableNum =
+        receiptData?.bill?.table_number ||
+        receiptData?.table_number ||
+        bill?.table_number ||
+        targetTable;
+
+      setSettlementCelebration({
+        amount: exactAmount,
+        billNumber: invoiceNumber,
+        tableNumber: tableNum,
+        paymentMethod: receiptData?.payment?.payment_method || receiptData?.payment_method || selectedMethod,
+      });
+
+      triggerConfetti();
+
+      // Clean local ordering session
       localStorage.removeItem(`spicy_order_${targetTable}`);
       localStorage.removeItem(`spicy_session_${targetTable}`);
-      triggerConfetti();
+
+      // 2. Double-check latest bill from server
+      if (bill?.id) {
+        api
+          .getBill(bill.id)
+          .then((freshBill) => {
+            if (freshBill) setBill(freshBill);
+          })
+          .catch(() => {});
+      }
+
+      // 3. Automatically transition to Digital Receipt page after short display (1.8s)
+      setTimeout(() => {
+        setPaymentSuccess(true);
+        setVerifiedReceipt(receiptData);
+        setSettlementCelebration(null);
+      }, 1800);
     },
-    [targetTable]
+    [targetTable, bill, selectedMethod]
   );
 
   // 1. Fetch or Generate Live Bill
@@ -145,18 +191,54 @@ function BillPayment({ billId = null, tableParam = null, sessionParam = null }) 
     fetchLiveBill();
   }, [fetchLiveBill]);
 
-  // WebSocket Live Events
+  // WebSocket Live Events & Reconnection Safety
   const handleWsEvent = useCallback(
-    (event) => {
+    async (event) => {
       if (!event) return;
+
+      // Handle Reconnection & Screen Focus
+      if (event.type === "SYNC_STATUS" || event.type === "WS_RECONNECTED") {
+        if (bill?.id && !paymentSuccess) {
+          try {
+            const freshBill = await api.getBill(bill.id);
+            if (freshBill && freshBill.status === "PAID") {
+              handlePaymentSuccess({
+                restaurant_name: freshBill.restaurant_name || "Spicy Spoon",
+                restaurant_address: freshBill.restaurant_address || "Tiruppur-Palladam road, Tamil Nadu",
+                restaurant_phone: freshBill.restaurant_phone || "+91 73958 77142",
+                bill: freshBill,
+                payment: freshBill.payment || {
+                  payment_method: freshBill.payment_method || selectedMethod,
+                  transaction_id: freshBill.payment?.transaction_id || "VERIFIED-TXN",
+                  amount: freshBill.grand_total,
+                },
+                items: freshBill.items || bill.items || [],
+              });
+            }
+          } catch (e) {}
+        }
+        return;
+      }
+
+      const eventBillId = event.data?.bill_id || event.data?.bill?.id || event.data?.id;
+      const eventBillNum = event.data?.bill_number || event.data?.bill?.bill_number;
+      const eventSession = event.data?.session_id || event.data?.bill?.session_id;
+      const eventTable = event.data?.table_number || event.data?.bill?.table_number || event.data?.table?.table_number;
+
       const isMyBill =
-        event.data?.bill?.id === bill?.id ||
-        event.data?.bill?.bill_number === bill?.bill_number ||
-        event.data?.bill?.session_id === targetSession ||
-        (event.data?.table?.table_number === targetTable && bill?.table_number === targetTable);
+        (bill?.id && eventBillId === bill.id) ||
+        (bill?.bill_number && eventBillNum === bill.bill_number) ||
+        (targetSession && eventSession === targetSession) ||
+        (targetTable && eventTable === targetTable);
 
       if (
-        ["PAYMENT_VERIFIED", "PAYMENT_COMPLETED", "BILL_PAID", "CASH_PAYMENT_CONFIRMED"].includes(event.type) &&
+        [
+          "PAYMENT_SUCCESS",
+          "PAYMENT_VERIFIED",
+          "PAYMENT_COMPLETED",
+          "BILL_PAID",
+          "CASH_PAYMENT_CONFIRMED",
+        ].includes(event.type) &&
         isMyBill
       ) {
         const fullRec = event.data?.receipt || event.data;
@@ -171,12 +253,12 @@ function BillPayment({ billId = null, tableParam = null, sessionParam = null }) 
         setBill(event.data);
       }
     },
-    [bill, targetSession, targetTable, handlePaymentSuccess]
+    [bill, targetSession, targetTable, handlePaymentSuccess, paymentSuccess, selectedMethod]
   );
 
   useWebSocket(handleWsEvent);
 
-  // Background Polling Check to sync status with server
+  // Background Polling Check to sync status with server every 2 seconds
   useEffect(() => {
     if (paymentSuccess || !bill?.id) return;
 
@@ -200,7 +282,7 @@ function BillPayment({ billId = null, tableParam = null, sessionParam = null }) 
       } catch (e) {}
     };
 
-    pollTimerRef.current = setInterval(checkServerPaymentStatus, 2500);
+    pollTimerRef.current = setInterval(checkServerPaymentStatus, 2000);
 
     return () => {
       if (pollTimerRef.current) clearInterval(pollTimerRef.current);
@@ -383,6 +465,32 @@ function BillPayment({ billId = null, tableParam = null, sessionParam = null }) 
           <RefreshCw size={16} className={loading ? "spin" : ""} />
         </button>
       </header>
+
+      {/* REAL-TIME SETTLEMENT CELEBRATION MODAL (IMMEDIATE FEEDBACK) */}
+      {settlementCelebration && (
+        <div className="settlement-celebration-overlay">
+          <div className="settlement-celebration-modal">
+            <div className="settle-success-icon-wrap">
+              <CheckCircle2 size={56} className="settle-check-pulse" />
+            </div>
+            <h2>✓ Payment Successful</h2>
+            <div className="settle-amount-highlight">
+              <span>₹{settlementCelebration.amount} Received</span>
+            </div>
+            <p className="settle-congrats-text">
+              Your bill has been settled successfully.
+            </p>
+            <div className="settle-meta-pill">
+              <span>Invoice: #{settlementCelebration.billNumber}</span>
+              <span>Table: {settlementCelebration.tableNumber}</span>
+            </div>
+            <div className="settle-auto-redirect-box">
+              <RefreshCw size={16} className="spin" />
+              <span>Opening your official Digital Receipt...</span>
+            </div>
+          </div>
+        </div>
+      )}
 
       {errorMessage && (
         <div className="bill-error-banner">

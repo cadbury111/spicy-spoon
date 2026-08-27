@@ -777,3 +777,123 @@
     font-size: 0.75rem;
   }
 }
+
+/* ================= SETTLEMENT CELEBRATION MODAL ================= */
+.settlement-celebration-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(11, 7, 5, 0.88);
+  backdrop-filter: blur(10px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 9999;
+  padding: 20px;
+  animation: fadeIn 0.25s ease-out;
+}
+
+.settlement-celebration-modal {
+  background: linear-gradient(145deg, #1d1109, #140b06);
+  border: 2px solid rgba(16, 185, 129, 0.6);
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.8), 0 0 40px rgba(16, 185, 129, 0.25);
+  border-radius: 24px;
+  max-width: 440px;
+  width: 100%;
+  padding: 36px 28px;
+  text-align: center;
+  animation: popIn 0.35s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+}
+
+@keyframes popIn {
+  0% {
+    opacity: 0;
+    transform: scale(0.85);
+  }
+  100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+.settle-success-icon-wrap {
+  width: 80px;
+  height: 80px;
+  background: rgba(16, 185, 129, 0.18);
+  border: 2px solid #10b981;
+  border-radius: 50%;
+  margin: 0 auto 16px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #10b981;
+}
+
+.settle-check-pulse {
+  animation: settlePulse 1.6s infinite ease-in-out;
+}
+
+@keyframes settlePulse {
+  0%, 100% {
+    transform: scale(1);
+  }
+  50% {
+    transform: scale(1.12);
+  }
+}
+
+.settlement-celebration-modal h2 {
+  margin: 0 0 10px 0;
+  color: #10b981;
+  font-size: 1.65rem;
+  font-weight: 800;
+  letter-spacing: -0.5px;
+}
+
+.settle-amount-highlight {
+  display: inline-block;
+  background: rgba(16, 185, 129, 0.12);
+  border: 1px solid rgba(16, 185, 129, 0.35);
+  color: #6ee7b7;
+  font-size: 1.35rem;
+  font-weight: 800;
+  padding: 6px 18px;
+  border-radius: 30px;
+  margin-bottom: 14px;
+}
+
+.settle-congrats-text {
+  margin: 0 0 18px 0;
+  font-size: 0.95rem;
+  color: #e5d5ca;
+  font-weight: 600;
+}
+
+.settle-meta-pill {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  margin-bottom: 24px;
+}
+
+.settle-meta-pill span {
+  background: #25160e;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  color: #a89487;
+  font-size: 0.78rem;
+  font-weight: 600;
+  padding: 4px 10px;
+  border-radius: 8px;
+}
+
+.settle-auto-redirect-box {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  color: #ff9d76;
+  font-size: 0.84rem;
+  font-weight: 600;
+  padding-top: 14px;
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+}

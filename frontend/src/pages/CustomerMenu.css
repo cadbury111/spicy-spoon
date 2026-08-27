@@ -1514,3 +1514,71 @@
     padding: 20px 16px;
   }
 }
+
+/* ================= MENU REAL-TIME SETTLEMENT CELEBRATION MODAL ================= */
+.menu-settlement-modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(11, 7, 5, 0.88);
+  backdrop-filter: blur(10px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 9999;
+  padding: 20px;
+  animation: fadeIn 0.25s ease-out;
+}
+
+.menu-settlement-modal {
+  background: linear-gradient(145deg, #1d1109, #140b06);
+  border: 2px solid rgba(16, 185, 129, 0.6);
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.8), 0 0 40px rgba(16, 185, 129, 0.25);
+  border-radius: 24px;
+  max-width: 440px;
+  width: 100%;
+  padding: 36px 28px;
+  text-align: center;
+  animation: popIn 0.35s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+}
+
+.menu-settle-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.btn-view-receipt-modal {
+  background: linear-gradient(135deg, #10b981, #059669);
+  color: #ffffff;
+  padding: 14px 20px;
+  border-radius: 12px;
+  font-weight: 700;
+  text-decoration: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  box-shadow: 0 6px 20px rgba(16, 185, 129, 0.4);
+  transition: all 0.2s ease;
+}
+
+.btn-view-receipt-modal:hover {
+  transform: translateY(-2px);
+}
+
+.btn-dismiss-modal {
+  background: #25160e;
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  color: #e5d5ca;
+  padding: 10px 16px;
+  border-radius: 10px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.btn-dismiss-modal:hover {
+  background: rgba(255, 255, 255, 0.1);
+  color: #ffffff;
+}
+

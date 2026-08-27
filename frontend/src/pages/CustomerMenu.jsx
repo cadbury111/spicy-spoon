@@ -68,6 +68,7 @@ function CustomerMenu() {
   // Customer info
   const [customerName, setCustomerName] = useState("Table Guest");
   const [customerPhone, setCustomerPhone] = useState("");
+  const [settlementNotification, setSettlementNotification] = useState(null);
 
   // 1. Fetch Menu & Tables
   const fetchMenu = useCallback(async () => {
@@ -99,34 +100,42 @@ function CustomerMenu() {
       const data = await api.getTables();
       setAvailableTables(data || []);
     } catch (err) {
-      console.warn("Failed to fetch tables:", err.message);
+      console.warn("Tables error:", err);
     }
   }, []);
 
-  // Fetch all active orders for the table or session
+  // 2. Fetch Active Multi-round Orders
   const fetchActiveOrders = useCallback(async () => {
     try {
+      const liveBill = await api.getLiveBill({ tableNumber, sessionId: activeSessionId }).catch(() => null);
+      if (liveBill && liveBill.bill) {
+        if (liveBill.bill.status === "PAID") {
+          setActiveOrders([]);
+          setActiveSessionId(null);
+          localStorage.removeItem(`spicy_session_${tableNumber}`);
+          localStorage.removeItem(`spicy_order_${tableNumber}`);
+          return;
+        }
+        if (liveBill.bill.orders && liveBill.bill.orders.length > 0) {
+          setActiveOrders(liveBill.bill.orders);
+          return;
+        }
+      }
+
       const orders = await api.getOrders({
-        session_id: activeSessionId || undefined,
         table_number: tableNumber,
+        session_id: activeSessionId || undefined,
       });
 
-      const currentTableOrders = (orders || []).filter(
-        (o) =>
-          (o.tableNumber === tableNumber || o.table_number === tableNumber) &&
-          !["COMPLETED", "CANCELLED"].includes(o.status)
+      const ongoing = (orders || []).filter((o) =>
+        ["ORDER_PLACED", "ACCEPTED", "PREPARING", "READY", "SERVED", "PAYMENT_PENDING"].includes(o.status)
       );
 
-      setActiveOrders(currentTableOrders);
-      if (currentTableOrders.length > 0 && !activeSessionId) {
-        const sess = currentTableOrders[0].session_id;
-        setActiveSessionId(sess);
-        localStorage.setItem(`spicy_session_${tableNumber}`, sess);
-      }
+      setActiveOrders(ongoing);
     } catch (err) {
-      console.warn("Failed to fetch active orders:", err.message);
+      console.warn("Error fetching active orders:", err);
     }
-  }, [activeSessionId, tableNumber]);
+  }, [tableNumber, activeSessionId]);
 
   useEffect(() => {
     fetchMenu();
@@ -144,22 +153,35 @@ function CustomerMenu() {
           "NEW_ORDER",
           "ORDER_STATUS_UPDATED",
           "BILL_GENERATED",
+          "PAYMENT_SUCCESS",
           "PAYMENT_COMPLETED",
           "PAYMENT_VERIFIED",
           "CASH_PAYMENT_CONFIRMED",
           "BILL_PAID",
           "TABLE_STATUS_UPDATED",
+          "SYNC_STATUS",
+          "WS_RECONNECTED",
         ].includes(event.type)
       ) {
         fetchActiveOrders();
         fetchTables();
 
         if (
-          ["PAYMENT_COMPLETED", "PAYMENT_VERIFIED", "CASH_PAYMENT_CONFIRMED", "BILL_PAID"].includes(event.type) &&
+          ["PAYMENT_SUCCESS", "PAYMENT_COMPLETED", "PAYMENT_VERIFIED", "CASH_PAYMENT_CONFIRMED", "BILL_PAID"].includes(
+            event.type
+          ) &&
           (event.data?.bill?.table_number === tableNumber ||
             event.data?.table?.table_number === tableNumber ||
-            event.data?.table_number === tableNumber)
+            event.data?.table_number === tableNumber ||
+            (activeSessionId && event.data?.session_id === activeSessionId) ||
+            (activeSessionId && event.data?.bill?.session_id === activeSessionId))
         ) {
+          const rec = event.data?.receipt || event.data;
+          setSettlementNotification({
+            billNumber: rec?.bill?.bill_number || rec?.bill_number || "LIVE",
+            amount: Number(rec?.bill?.grand_total || rec?.amount || rec?.grand_total || 0).toFixed(2),
+            tableNumber: tableNumber,
+          });
           setActiveOrders([]);
           setActiveSessionId(null);
           localStorage.removeItem(`spicy_session_${tableNumber}`);
@@ -168,7 +190,7 @@ function CustomerMenu() {
         }
       }
     },
-    [fetchActiveOrders, fetchTables, tableNumber]
+    [fetchActiveOrders, fetchTables, tableNumber, activeSessionId]
   );
 
   useWebSocket(handleWsEvent);
@@ -324,6 +346,41 @@ function CustomerMenu() {
           </button>
         </div>
       </header>
+
+      {/* REAL-TIME SETTLEMENT CELEBRATION NOTIFICATION */}
+      {settlementNotification && (
+        <div className="menu-settlement-modal-overlay">
+          <div className="menu-settlement-modal">
+            <div className="settle-success-icon-wrap">
+              <CheckCircle2 size={52} className="settle-check-pulse" />
+            </div>
+            <h2>✓ Payment Successful</h2>
+            <div className="settle-amount-highlight">
+              <span>₹{settlementNotification.amount} Received</span>
+            </div>
+            <p className="settle-congrats-text">
+              Your bill has been settled successfully for {formatTableDisplay(tableNumber)}.
+            </p>
+            <div className="settle-meta-pill">
+              <span>Invoice #{settlementNotification.billNumber}</span>
+            </div>
+            <div className="menu-settle-actions">
+              <a
+                href={`#/bill?table=${tableNumber}`}
+                className="btn-view-receipt-modal"
+              >
+                <Receipt size={16} /> View Digital Receipt →
+              </a>
+              <button
+                className="btn-dismiss-modal"
+                onClick={() => setSettlementNotification(null)}
+              >
+                Done
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* TABLE DETECTED WELCOME BANNER */}
       <section className="table-welcome-strip">
