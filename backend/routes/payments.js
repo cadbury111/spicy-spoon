@@ -38,65 +38,6 @@ function buildReceipt(billId, paymentId) {
   };
 }
 
-// Automatic UPI Verification Simulator / Engine (Server-Side)
-function autoVerifyUpiPayment(paymentId, delayMs = 3500) {
-  setTimeout(() => {
-    try {
-      const payment = db.prepare("SELECT * FROM payments WHERE id = ?").get(paymentId);
-      if (!payment || payment.status !== "PENDING" || payment.payment_method !== "UPI") {
-        return;
-      }
-
-      const bill = db.prepare("SELECT * FROM bills WHERE id = ?").get(payment.bill_id);
-      if (!bill || bill.status === "PAID") return;
-
-      // 1. Mark Payment SUCCESS
-      db.prepare(`
-        UPDATE payments
-        SET status = 'SUCCESS', gateway_reference = 'AUTO_UPI_VERIFIED', signature_verified = 1, paid_at = CURRENT_TIMESTAMP
-        WHERE id = ?
-      `).run(payment.id);
-
-      // 2. Mark Bill PAID
-      db.prepare("UPDATE bills SET status = 'PAID' WHERE id = ?").run(bill.id);
-
-      // 3. Mark Orders COMPLETED
-      if (payment.session_id) {
-        db.prepare("UPDATE orders SET status = 'COMPLETED', updated_at = CURRENT_TIMESTAMP WHERE session_id = ?").run(
-          payment.session_id
-        );
-      } else {
-        db.prepare("UPDATE orders SET status = 'COMPLETED', updated_at = CURRENT_TIMESTAMP WHERE id = ?").run(
-          payment.order_id
-        );
-      }
-
-      // 4. Release Table to AVAILABLE
-      db.prepare(`
-        UPDATE restaurant_tables
-        SET status = 'AVAILABLE', current_order_id = NULL, current_session_id = NULL, current_booking_id = NULL
-        WHERE id = ?
-      `).run(bill.table_id);
-
-      // 5. Complete Booking if attached
-      const order = db.prepare("SELECT booking_id FROM orders WHERE id = ?").get(payment.order_id);
-      if (order && order.booking_id) {
-        db.prepare("UPDATE bookings SET status = 'COMPLETED' WHERE id = ?").run(order.booking_id);
-      }
-
-      const fullReceipt = buildReceipt(bill.id, payment.id);
-
-      // Broadcast Real-time Events
-      broadcast("PAYMENT_VERIFIED", fullReceipt);
-      broadcast("BILL_PAID", fullReceipt);
-      broadcast("PAYMENT_COMPLETED", fullReceipt);
-      broadcast("TABLE_STATUS_UPDATED", fullReceipt.table);
-    } catch (e) {
-      console.error("Auto UPI verification error:", e);
-    }
-  }, delayMs);
-}
-
 // 1. Get all payments (Admin Ledger - ADMIN ONLY)
 router.get("/", verifyStaffAuth(["ADMIN"]), (req, res) => {
   try {
@@ -313,11 +254,8 @@ router.post("/create", async (req, res) => {
       upiIntentUrl = `upi://pay?pa=${upiVpa}&pn=${restaurantName}&am=${bill.grand_total.toFixed(2)}&cu=INR&tn=${note}&tr=${transactionId}`;
       upiDataUrl = await QRCode.toDataURL(upiIntentUrl, { width: 300, margin: 2 });
 
-      // Broadcast PAYMENT_PENDING
+      // Broadcast PAYMENT_PENDING (System strictly remains in WAITING state until verified)
       broadcast("PAYMENT_PENDING", { bill, payment_method: "UPI", transactionId, amount: bill.grand_total });
-
-      // Automatically trigger server-side verification in development/sandbox mode
-      autoVerifyUpiPayment(paymentId, 4000);
     }
 
     if (method === "CASH") {
@@ -356,7 +294,7 @@ router.post("/create", async (req, res) => {
   }
 });
 
-// 7. Verify Payment & Atomic Table Release (Card / Gateway / Idempotent Verification)
+// 7. Verify Payment & Atomic Table Release (Cryptographic & Amount Verification)
 router.post("/verify", (req, res) => {
   try {
     const {
@@ -378,7 +316,7 @@ router.post("/verify", (req, res) => {
     const targetTxn = transaction_id || transactionId;
     const targetPaymentId = Number(payment_id || paymentId);
 
-    // IDEMPOTENCY CHECK: If already verified with this key, return existing result immediately
+    // IDEMPOTENCY CHECK: If already verified with this key, return existing verified receipt
     if (targetKey) {
       const existingSuccess = db.prepare(`
         SELECT p.*, b.bill_number, b.table_number, b.grand_total
@@ -440,7 +378,7 @@ router.post("/verify", (req, res) => {
       return res.json({ message: "Payment already verified", payment, bill: fullReceipt.bill, table: fullReceipt.table, receipt: fullReceipt });
     }
 
-    // 1. Verify Razorpay Gateway Signature (if provided)
+    // 1. Strict Cryptographic Signature Verification
     let signatureVerified = 0;
     if (razorpay_order_id && razorpay_payment_id && razorpay_signature) {
       const expectedSign = crypto
@@ -448,19 +386,38 @@ router.post("/verify", (req, res) => {
         .update(`${razorpay_order_id}|${razorpay_payment_id}`)
         .digest("hex");
 
-      if (expectedSign === razorpay_signature || PAYMENT_MODE === "DEV_SANDBOX") {
-        signatureVerified = 1;
-      } else {
-        return res.status(400).json({ message: "Invalid Razorpay payment signature verification failed." });
+      if (expectedSign !== razorpay_signature) {
+        db.prepare("UPDATE payments SET status = 'FAILED' WHERE id = ?").run(payment.id);
+        broadcast("PAYMENT_FAILED", { bill_id: payment.bill_id, reason: "Cryptographic signature mismatch" });
+        return res.status(400).json({ message: "Invalid payment signature verification failed." });
       }
-    } else {
+
+      // Check duplicate payment reference usage (double-spend protection)
+      const duplicateTxn = db.prepare("SELECT id FROM payments WHERE gateway_reference = ? AND id != ?").get(
+        razorpay_payment_id,
+        payment.id
+      );
+      if (duplicateTxn) {
+        return res.status(400).json({ message: "This payment transaction ID has already been utilized." });
+      }
+
       signatureVerified = 1;
+    } else {
+      // Direct verification requires valid gateway signature or admin verification
+      return res.status(400).json({
+        message: "Payment verification requires valid cryptographic gateway signature and authorization tokens.",
+      });
     }
 
     // 2. Verify Exact Payment Amount
     if (amount !== undefined && Number(amount) > 0) {
       const parsedAmount = Number(amount);
-      if (Math.abs(parsedAmount - payment.grand_total) > 0.5 && Math.abs(parsedAmount / 100 - payment.grand_total) > 0.5) {
+      if (
+        Math.abs(parsedAmount - payment.grand_total) > 0.5 &&
+        Math.abs(parsedAmount / 100 - payment.grand_total) > 0.5
+      ) {
+        db.prepare("UPDATE payments SET status = 'FAILED' WHERE id = ?").run(payment.id);
+        broadcast("PAYMENT_FAILED", { bill_id: payment.bill_id, reason: "Payment amount mismatch" });
         return res.status(400).json({
           message: `Payment amount mismatch. Expected ₹${payment.grand_total}, got ₹${parsedAmount}`,
         });
@@ -527,7 +484,103 @@ router.post("/verify", (req, res) => {
   }
 });
 
-// 8. Admin Confirm Cash Payment (ADMIN ONLY)
+// 8. Payment Gateway Webhook Endpoint (Razorpay / Bank Webhook Notification)
+router.post("/webhook", (req, res) => {
+  try {
+    const secret = process.env.RAZORPAY_WEBHOOK_SECRET || RAZORPAY_KEY_SECRET;
+    const signature = req.headers["x-razorpay-signature"];
+
+    if (signature) {
+      const rawBody = JSON.stringify(req.body);
+      const expected = crypto.createHmac("sha256", secret).update(rawBody).digest("hex");
+      if (expected !== signature) {
+        console.error("Webhook signature mismatch");
+        return res.status(400).json({ message: "Invalid webhook signature" });
+      }
+    }
+
+    const event = req.body.event; // e.g. 'payment.captured', 'order.paid', 'payment.failed'
+    const entity = req.body.payload?.payment?.entity || req.body.payload?.order?.entity || req.body;
+
+    if (["payment.captured", "order.paid"].includes(event) || entity.status === "captured" || entity.status === "SUCCESS") {
+      const billId = entity.notes?.bill_id || entity.bill_id;
+      const txnId = entity.notes?.transaction_id || entity.id;
+      const amountReceived = entity.amount ? entity.amount / 100 : entity.grand_total;
+
+      let payment = null;
+      if (billId) {
+        payment = db
+          .prepare(
+            `SELECT p.*, b.grand_total, b.table_id, b.order_id, b.session_id 
+             FROM payments p JOIN bills b ON p.bill_id = b.id 
+             WHERE p.bill_id = ? ORDER BY p.id DESC`
+          )
+          .get(Number(billId));
+      } else if (txnId) {
+        payment = db
+          .prepare(
+            `SELECT p.*, b.grand_total, b.table_id, b.order_id, b.session_id 
+             FROM payments p JOIN bills b ON p.bill_id = b.id 
+             WHERE p.transaction_id = ? OR p.gateway_reference = ?`
+          )
+          .get(txnId, txnId);
+      }
+
+      if (payment && payment.status !== "SUCCESS") {
+        if (amountReceived && Math.abs(amountReceived - payment.grand_total) > 1) {
+          console.error("Webhook amount mismatch:", amountReceived, payment.grand_total);
+          return res.status(400).json({ message: "Amount mismatch in webhook" });
+        }
+
+        db.prepare(`
+          UPDATE payments
+          SET status = 'SUCCESS', gateway_reference = ?, signature_verified = 1, paid_at = CURRENT_TIMESTAMP
+          WHERE id = ?
+        `).run(entity.id || txnId, payment.id);
+
+        db.prepare("UPDATE bills SET status = 'PAID' WHERE id = ?").run(payment.bill_id);
+
+        if (payment.session_id) {
+          db.prepare("UPDATE orders SET status = 'COMPLETED', updated_at = CURRENT_TIMESTAMP WHERE session_id = ?").run(
+            payment.session_id
+          );
+        } else {
+          db.prepare("UPDATE orders SET status = 'COMPLETED', updated_at = CURRENT_TIMESTAMP WHERE id = ?").run(
+            payment.order_id
+          );
+        }
+
+        db.prepare(`
+          UPDATE restaurant_tables
+          SET status = 'AVAILABLE', current_order_id = NULL, current_session_id = NULL, current_booking_id = NULL
+          WHERE id = ?
+        `).run(payment.table_id);
+
+        const fullReceipt = buildReceipt(payment.bill_id, payment.id);
+        broadcast("PAYMENT_VERIFIED", fullReceipt);
+        broadcast("BILL_PAID", fullReceipt);
+        broadcast("PAYMENT_COMPLETED", fullReceipt);
+        broadcast("TABLE_STATUS_UPDATED", fullReceipt.table);
+      }
+    } else if (event === "payment.failed") {
+      const billId = entity.notes?.bill_id || entity.bill_id;
+      if (billId) {
+        db.prepare("UPDATE payments SET status = 'FAILED' WHERE bill_id = ?").run(Number(billId));
+        broadcast("PAYMENT_FAILED", {
+          bill_id: billId,
+          reason: entity.error_description || "Payment failed at gateway",
+        });
+      }
+    }
+
+    res.json({ status: "ok", received: true });
+  } catch (err) {
+    console.error("Webhook processing error:", err);
+    res.status(500).json({ message: "Webhook error", error: err.message });
+  }
+});
+
+// 9. Admin Confirm Cash Payment (ADMIN ONLY)
 router.post("/cash-confirm", verifyStaffAuth(["ADMIN"]), (req, res) => {
   try {
     const { bill_id, billId, transaction_id } = req.body;

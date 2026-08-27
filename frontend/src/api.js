@@ -708,50 +708,6 @@ async function handleClientFallback(endpoint, options = {}, originalError) {
           transactionId: txn,
           amount: targetBill.grand_total,
         });
-
-        // Automatic UPI verification after 3.5 seconds in hosted/standalone demo mode
-        if (body.payment_method === "UPI") {
-          setTimeout(() => {
-            try {
-              let currentBills = getLocalDemoData("spicy_demo_bills", []);
-              let bToPay = currentBills.find((b) => b.id === targetBill.id);
-              if (bToPay && bToPay.status !== "PAID") {
-                currentBills = currentBills.map((b) => (b.id === targetBill.id ? { ...b, status: "PAID", payment_method: "UPI" } : b));
-                setLocalDemoData("spicy_demo_bills", currentBills);
-
-                let curTables = getLocalDemoData("spicy_demo_tables", DEFAULT_TABLES);
-                curTables = curTables.map((t) =>
-                  t.table_number === targetBill.table_number
-                    ? { ...t, status: "AVAILABLE", current_order_id: null, current_session_id: null, current_booking_id: null }
-                    : t
-                );
-                setLocalDemoData("spicy_demo_tables", curTables);
-                const curTbl = curTables.find((t) => t.table_number === targetBill.table_number) || curTables[0];
-
-                const autoReceipt = {
-                  restaurant_name: "Spicy Spoon",
-                  restaurant_address: "Tiruppur-Palladam road, Tamil Nadu",
-                  restaurant_phone: "+91 73958 77142",
-                  bill: { ...targetBill, status: "PAID", payment_method: "UPI" },
-                  payment: {
-                    id: Date.now(),
-                    payment_method: "UPI",
-                    transaction_id: txn,
-                    amount: targetBill.grand_total,
-                    status: "SUCCESS",
-                  },
-                  table: curTbl,
-                  items: targetBill.items || [],
-                };
-
-                dispatchClientEvent("PAYMENT_VERIFIED", autoReceipt);
-                dispatchClientEvent("BILL_PAID", autoReceipt);
-                dispatchClientEvent("PAYMENT_COMPLETED", autoReceipt);
-                dispatchClientEvent("TABLE_STATUS_UPDATED", curTbl);
-              }
-            } catch (e) {}
-          }, 3500);
-        }
       }
 
       return {

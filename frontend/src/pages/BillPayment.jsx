@@ -254,7 +254,22 @@ function BillPayment({ billId = null, tableParam = null, sessionParam = null }) 
     }
   };
 
-  // 4. Card Payment Authorization & Verification (Server-Authoritative)
+  // Dynamic Razorpay SDK Loader
+  const loadRazorpayScript = () => {
+    return new Promise((resolve) => {
+      if (window.Razorpay) {
+        return resolve(true);
+      }
+      const script = document.createElement("script");
+      script.src = "https://checkout.razorpay.com/v1/checkout.js";
+      script.async = true;
+      script.onload = () => resolve(true);
+      script.onerror = () => resolve(false);
+      document.body.appendChild(script);
+    });
+  };
+
+  // 4. Card / Gateway Payment Authorization & Verification (Cryptographically Server-Authoritative)
   const handlePayViaCard = async () => {
     if (!bill) return;
 
@@ -262,34 +277,78 @@ function BillPayment({ billId = null, tableParam = null, sessionParam = null }) 
       setIsProcessing(true);
       setErrorMessage("");
 
-      const transactionId = paymentData?.payment?.transaction_id || `TXN-CARD-${Date.now()}`;
-      const idempotencyKey = paymentData?.idempotencyKey || `KEY-${Date.now()}`;
+      const isScriptLoaded = await loadRazorpayScript();
 
-      const res = await api.verifyPayment({
-        bill_id: bill.id,
-        transaction_id: transactionId,
-        payment_id: paymentData?.payment?.id,
-        idempotency_key: idempotencyKey,
-        amount: bill.grand_total,
-        status: "SUCCESS",
-        gateway_reference: `CARD_AUTH_${Date.now()}`,
+      if (!isScriptLoaded || !window.Razorpay) {
+        // Fallback to direct backend verification token authorization
+        const gatewayOrder = await api.createGatewayOrder({ bill_id: bill.id }).catch(() => null);
+        const orderId = gatewayOrder?.gateway_order_id || `order_spicy_${Date.now()}`;
+        const paymentId = `pay_spicy_${Date.now()}_${Math.floor(1000 + Math.random() * 9000)}`;
+
+        // Note: Backend requires valid HMAC signature. In test/demo without live Razorpay SDK modal,
+        // we notify customer to use Gateway checkout or UPI.
+        setErrorMessage("Please complete payment using the official Payment Gateway or scan the UPI QR code.");
+        setIsProcessing(false);
+        return;
+      }
+
+      const gatewayOrder = await api.createGatewayOrder({ bill_id: bill.id });
+
+      const options = {
+        key: gatewayOrder.key_id || "rzp_test_spicyspoon_demo",
+        amount: gatewayOrder.amount,
+        currency: gatewayOrder.currency || "INR",
+        name: "Spicy Spoon Restaurant",
+        description: `Dining Bill #${bill.bill_number} (Table ${bill.table_number})`,
+        image: "https://cdn-icons-png.flaticon.com/512/1046/1046784.png",
+        order_id: gatewayOrder.gateway_order_id,
+        prefill: {
+          name: bill.customer_name || "Dining Guest",
+          contact: bill.customer_phone || "+91 9988776655",
+        },
+        theme: {
+          color: "#ff4500",
+        },
+        modal: {
+          ondismiss: () => {
+            setIsProcessing(false);
+            setErrorMessage("Payment was cancelled or closed. Your bill remains unpaid.");
+          },
+        },
+        handler: async (response) => {
+          try {
+            setIsProcessing(true);
+            const verifyRes = await api.verifyPayment({
+              bill_id: bill.id,
+              razorpay_order_id: response.razorpay_order_id,
+              razorpay_payment_id: response.razorpay_payment_id,
+              razorpay_signature: response.razorpay_signature,
+              amount: bill.grand_total,
+            });
+
+            if (verifyRes && verifyRes.receipt) {
+              handlePaymentSuccess(verifyRes.receipt);
+            } else {
+              setErrorMessage("Payment verification failed on server. Please check with restaurant staff.");
+            }
+          } catch (verErr) {
+            console.error("Gateway verification error:", verErr);
+            setErrorMessage("Payment verification failed: " + (verErr.message || "Invalid signature"));
+          } finally {
+            setIsProcessing(false);
+          }
+        },
+      };
+
+      const rzp = new window.Razorpay(options);
+      rzp.on("payment.failed", function (failResponse) {
+        setIsProcessing(false);
+        setErrorMessage("Payment Failed: " + (failResponse.error?.description || "Card declined by bank."));
       });
-
-      handlePaymentSuccess(
-        res.receipt || {
-          restaurant_name: "Spicy Spoon",
-          restaurant_address: "Tiruppur-Palladam road, Tamil Nadu",
-          restaurant_phone: "+91 73958 77142",
-          bill: res.bill || bill,
-          payment: res.payment,
-          table: res.table,
-          items: bill.items || [],
-        }
-      );
+      rzp.open();
     } catch (err) {
       console.error("Card payment error:", err);
-      setErrorMessage("Card Payment Authorization Failed: " + (err.message || "Please check card details and retry."));
-    } finally {
+      setErrorMessage("Card Payment Failed: " + (err.message || "Please retry or use UPI."));
       setIsProcessing(false);
     }
   };
@@ -640,10 +699,9 @@ function BillPayment({ billId = null, tableParam = null, sessionParam = null }) 
                       <Radio size={16} className="radio-icon" />
                     </div>
                     <div className="verify-text-info">
-                      <h4>Listening for Bank UPI Payment...</h4>
+                      <h4>Waiting for Payment — Do not close this page</h4>
                       <p>
-                        Scan the QR code and approve the transaction in your UPI app. The system will automatically
-                        verify the payment and open your digital receipt.
+                        Status: <strong>PAYMENT PENDING</strong>. Scan the QR code and complete payment in your UPI app. The system is securely listening for payment gateway and bank webhook confirmation.
                       </p>
                     </div>
                   </div>

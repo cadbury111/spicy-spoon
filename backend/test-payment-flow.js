@@ -1,18 +1,21 @@
 const http = require("http");
+const crypto = require("crypto");
 const { app, server } = require("./server");
 const db = require("./db/database");
 
+const RAZORPAY_KEY_SECRET = process.env.RAZORPAY_KEY_SECRET || "spicyspoon_secret_demo_key";
+
 async function runPaymentFlowTestSuite() {
   console.log("================================================================");
-  console.log("🔥 RUNNING SPICY SPOON PAYMENT FLOW AUTOMATED TEST SUITE");
+  console.log("🔥 RUNNING STRICT REAL-WORLD PAYMENT VERIFICATION TEST SUITE");
   console.log("================================================================");
 
   const baseUrl = "http://localhost:5000";
 
-  function req(endpoint, method = "GET", body = null, token = null) {
+  function req(endpoint, method = "GET", body = null, token = null, customHeaders = {}) {
     return new Promise((resolve, reject) => {
       const url = new URL(endpoint, baseUrl);
-      const headers = { "Content-Type": "application/json" };
+      const headers = { "Content-Type": "application/json", ...customHeaders };
       if (token) {
         headers["Authorization"] = `Bearer ${token}`;
       }
@@ -48,14 +51,14 @@ async function runPaymentFlowTestSuite() {
 
   try {
     // ---------------------------------------------------------
-    // TEST 1: UPI QR AUTOMATIC BACKEND VERIFICATION
+    // TEST 1: UPI QR (STRICT WAITING & WEBHOOK VERIFICATION)
     // ---------------------------------------------------------
-    console.log("\n🧪 TEST 1: UPI QR Payment Flow (Automatic Server Verification)...");
+    console.log("\n🧪 TEST 1: UPI QR Payment Flow (Zero Fake Success / Webhook Verified)...");
 
     // 1. Place order on Table T2
     const order1Res = await req("/api/orders", "POST", {
       tableNumber: "T2",
-      customer_name: "UPI Test Guest",
+      customer_name: "UPI Strict Guest",
       customer_phone: "+91 99887 76655",
       items: [{ id: 1, name: "Tandoori Chicken (Full)", quantity: 1 }],
     });
@@ -82,11 +85,59 @@ async function runPaymentFlowTestSuite() {
     console.log(`  ✓ UPI QR generated with exact amount ₹${bill1.grand_total}`);
     console.log(`  ✓ Payment initial status in DB: ${upiRes.data.payment.status} (PENDING)`);
 
-    // 4. Wait for Server-Side Auto Verification (~4.5s)
-    console.log("  ⏳ Waiting for automatic backend verification of UPI payment...");
-    await new Promise((r) => setTimeout(r, 4500));
+    // 4. Verify system DOES NOT automatically mark success after timeout (No fake timers)
+    console.log("  ⏳ Checking that payment strictly STAYS PENDING and is NOT fake-verified by timer...");
+    await new Promise((r) => setTimeout(r, 1500));
 
-    // 5. Verify database records
+    const checkPendingPayment = db.prepare("SELECT * FROM payments WHERE id = ?").get(upiRes.data.payment.id);
+    const checkUnpaidBill = db.prepare("SELECT * FROM bills WHERE id = ?").get(bill1.id);
+    if (checkPendingPayment.status !== "PENDING") {
+      throw new Error(`CRITICAL BUG: Payment was prematurely marked as ${checkPendingPayment.status}! Must stay PENDING.`);
+    }
+    if (checkUnpaidBill.status !== "UNPAID") {
+      throw new Error(`CRITICAL BUG: Bill was prematurely marked as ${checkUnpaidBill.status}! Must stay UNPAID.`);
+    }
+    console.log("  ✓ Confirmed: Payment strictly remains in WAITING FOR PAYMENT (PENDING) state");
+
+    // 5. Simulate authentic Bank/Gateway Webhook confirming captured funds
+    console.log("  📡 Simulating authentic Payment Gateway Webhook (`payment.captured`)...");
+    const webhookPayload = {
+      event: "payment.captured",
+      payload: {
+        payment: {
+          entity: {
+            id: `pay_upi_bank_${Date.now()}`,
+            amount: Math.round(bill1.grand_total * 100),
+            currency: "INR",
+            status: "captured",
+            notes: {
+              bill_id: bill1.id,
+              transaction_id: upiRes.data.payment.transaction_id,
+            },
+          },
+        },
+      },
+    };
+
+    const webhookSignature = crypto
+      .createHmac("sha256", RAZORPAY_KEY_SECRET)
+      .update(JSON.stringify(webhookPayload))
+      .digest("hex");
+
+    const webhookRes = await req(
+      "/api/payments/webhook",
+      "POST",
+      webhookPayload,
+      null,
+      { "x-razorpay-signature": webhookSignature }
+    );
+
+    if (webhookRes.status !== 200) {
+      throw new Error("Webhook processing failed: " + JSON.stringify(webhookRes.data));
+    }
+    console.log("  ✓ Webhook cryptographically verified by server");
+
+    // 6. Verify database records updated ONLY after authentic webhook
     const verifiedPayment = db.prepare("SELECT * FROM payments WHERE id = ?").get(upiRes.data.payment.id);
     const paidBill = db.prepare("SELECT * FROM bills WHERE id = ?").get(bill1.id);
     const releasedTable = db.prepare("SELECT * FROM restaurant_tables WHERE id = ?").get(bill1.table_id);
@@ -104,12 +155,12 @@ async function runPaymentFlowTestSuite() {
     if (releasedTable.status !== "AVAILABLE") {
       throw new Error(`Table status is ${releasedTable.status}, expected AVAILABLE`);
     }
-    console.log("  ✅ TEST 1 PASSED: UPI QR automatically verified by server. Bill marked PAID, Table released.");
+    console.log("  ✅ TEST 1 PASSED: UPI payment strictly verified only upon authentic bank webhook.");
 
     // ---------------------------------------------------------
-    // TEST 2: CARD PAYMENT BACKEND VERIFICATION
+    // TEST 2: CARD PAYMENT CRYPTOGRAPHIC SIGNATURE & AMOUNT CHECK
     // ---------------------------------------------------------
-    console.log("\n🧪 TEST 2: Card Payment Flow (Server Authorization & Verification)...");
+    console.log("\n🧪 TEST 2: Card Payment Flow (Cryptographic Signature & Amount Verification)...");
 
     // 1. Place order on Table T4
     const order2Res = await req("/api/orders", "POST", {
@@ -129,28 +180,52 @@ async function runPaymentFlowTestSuite() {
     const bill2 = bill2Res.data.bill;
     console.log(`  ✓ Bill generated: #${bill2.bill_number}, Grand Total: ₹${bill2.grand_total}`);
 
-    // 3. Initiate Card Payment Intent
-    const cardInitRes = await req("/api/payments/create", "POST", {
-      bill_id: bill2.id,
-      payment_method: "CARD",
-    });
-    if (cardInitRes.status !== 201) throw new Error("Failed to initiate card intent");
+    // 3. Initiate Gateway Order
+    const gwOrderRes = await req("/api/payments/create-gateway-order", "POST", { bill_id: bill2.id });
+    if (gwOrderRes.status !== 200 || !gwOrderRes.data.gateway_order_id) {
+      throw new Error("Failed to create gateway order");
+    }
+    const razorpayOrderId = gwOrderRes.data.gateway_order_id;
+    const razorpayPaymentId = `pay_card_${Date.now()}`;
 
-    // 4. Verify Amount mismatch fails
+    // 4. Test: Tampered / Fake Signature MUST BE REJECTED
+    console.log("  🔒 Testing rejection of forged / missing payment signature...");
+    const fakeSignRes = await req("/api/payments/verify", "POST", {
+      bill_id: bill2.id,
+      razorpay_order_id: razorpayOrderId,
+      razorpay_payment_id: razorpayPaymentId,
+      razorpay_signature: "forged_fake_signature_abc123",
+      amount: bill2.grand_total,
+    });
+    if (fakeSignRes.status !== 400) {
+      throw new Error("Backend MUST reject forged signature!");
+    }
+    console.log("  ✓ Backend strictly rejected forged payment signature (400 Bad Request)");
+
+    // 5. Test: Mismatched Amount MUST BE REJECTED
+    const validSignature = crypto
+      .createHmac("sha256", RAZORPAY_KEY_SECRET)
+      .update(`${razorpayOrderId}|${razorpayPaymentId}`)
+      .digest("hex");
+
     const mismatchRes = await req("/api/payments/verify", "POST", {
       bill_id: bill2.id,
-      transaction_id: cardInitRes.data.payment.transaction_id,
-      amount: bill2.grand_total - 100, // wrong amount
+      razorpay_order_id: razorpayOrderId,
+      razorpay_payment_id: razorpayPaymentId,
+      razorpay_signature: validSignature,
+      amount: bill2.grand_total - 50, // wrong amount
     });
     if (mismatchRes.status !== 400) {
-      throw new Error("Backend should reject payment amount mismatch!");
+      throw new Error("Backend MUST reject payment amount mismatch!");
     }
-    console.log("  ✓ Backend strictly rejected mismatched card payment amount");
+    console.log("  ✓ Backend strictly rejected mismatched payment amount");
 
-    // 5. Verify Correct Amount & Gateway Authorization
+    // 6. Test: Valid HMAC Signature & Exact Amount Verification
     const cardVerifyRes = await req("/api/payments/verify", "POST", {
       bill_id: bill2.id,
-      transaction_id: cardInitRes.data.payment.transaction_id,
+      razorpay_order_id: razorpayOrderId,
+      razorpay_payment_id: razorpayPaymentId,
+      razorpay_signature: validSignature,
       amount: bill2.grand_total,
       status: "SUCCESS",
     });
@@ -161,12 +236,12 @@ async function runPaymentFlowTestSuite() {
     const cardPaidBill = db.prepare("SELECT * FROM bills WHERE id = ?").get(bill2.id);
     const cardTable = db.prepare("SELECT * FROM restaurant_tables WHERE id = ?").get(bill2.table_id);
     if (cardPaidBill.status !== "PAID" || cardTable.status !== "AVAILABLE") {
-      throw new Error("Bill not paid or table not released after card verification");
+      throw new Error("Bill not paid or table not released after valid card verification");
     }
-    console.log("  ✅ TEST 2 PASSED: Card payment verified by server. Digital receipt generated.");
+    console.log("  ✅ TEST 2 PASSED: Cryptographic signature verified by server. Digital receipt generated.");
 
     // ---------------------------------------------------------
-    // TEST 3: CASH PAYMENT FLOW (ADMIN ONLY CONFIRMATION)
+    // TEST 3: CASH PAYMENT FLOW (STRICT ADMIN-ONLY CONFIRMATION)
     // ---------------------------------------------------------
     console.log("\n🧪 TEST 3: Cash Payment Flow (Admin Only Confirmation)...");
 
@@ -252,8 +327,24 @@ async function runPaymentFlowTestSuite() {
 
     console.log("  ✅ TEST 3 PASSED: Cash payment verified ONLY after Admin confirmation. Table released.");
 
+    // ---------------------------------------------------------
+    // TEST 4: DOUBLE-SPENDING & IDEMPOTENCY PROTECTION
+    // ---------------------------------------------------------
+    console.log("\n🧪 TEST 4: Double-Spending & Idempotency Protection...");
+    const duplicateRes = await req("/api/payments/verify", "POST", {
+      bill_id: bill1.id,
+      razorpay_order_id: razorpayOrderId,
+      razorpay_payment_id: razorpayPaymentId, // Already used in TEST 2
+      razorpay_signature: validSignature,
+      amount: bill1.grand_total,
+    });
+    if (duplicateRes.status !== 400) {
+      throw new Error("Backend MUST reject duplicate payment ID reuse!");
+    }
+    console.log("  ✅ TEST 4 PASSED: Double-spending transaction ID reuse strictly prevented.");
+
     console.log("\n================================================================");
-    console.log("🎉 ALL AUTOMATED PAYMENT TESTS PASSED WITH 100% SUCCESS!");
+    console.log("🎉 ALL REAL-WORLD PAYMENT VERIFICATION TESTS PASSED (100%)!");
     console.log("================================================================");
     process.exit(0);
   } catch (err) {
