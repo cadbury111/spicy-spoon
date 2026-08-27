@@ -235,6 +235,7 @@ async function handleClientFallback(endpoint, options = {}, originalError) {
       const time = urlObj.searchParams.get("time") || "07:30 PM";
 
       const savedBookings = getLocalDemoData("spicy_demo_bookings", INITIAL_DEMO_BOOKINGS);
+      const savedOrders = getLocalDemoData("spicy_demo_orders", INITIAL_DEMO_ORDERS);
 
       return tables.map((t) => {
         const fitsCapacity = t.capacity >= guests;
@@ -244,17 +245,26 @@ async function handleClientFallback(endpoint, options = {}, originalError) {
                  b.start_time === time &&
                  b.status !== "CANCELLED"
         );
+        const hasActiveOrder = savedOrders.some(
+          (o) => (o.table_id === t.id || o.table_number === t.table_number || o.tableNumber === t.table_number || o.table_number === `T${t.table_number.replace(/^T/i, "")}`) &&
+                 o.status !== "COMPLETED" && o.status !== "PAID" && o.status !== "CANCELLED"
+        );
+
+        const isUnavailable = isBooked || hasActiveOrder || (t.status && t.status !== "AVAILABLE");
 
         return {
           ...t,
+          status: isUnavailable && t.status === "AVAILABLE" ? "BOOKED" : t.status,
           restaurant_id: 1,
-          isAvailableForSlot: fitsCapacity && !isBooked && t.status === "AVAILABLE",
+          isAvailableForSlot: fitsCapacity && !isUnavailable,
           fitsRequestedGuests: fitsCapacity,
-          isSlotAvailable: !isBooked,
+          isSlotAvailable: !isUnavailable,
           conflictReason: !fitsCapacity
             ? `Fits max ${t.capacity} guests`
             : isBooked
             ? "Already booked for this slot"
+            : hasActiveOrder
+            ? "Dining in progress (Active Order)"
             : t.status !== "AVAILABLE"
             ? `Currently ${t.status}`
             : null,

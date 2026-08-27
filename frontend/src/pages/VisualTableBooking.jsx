@@ -104,15 +104,7 @@ function VisualTableBooking({ slug = "spicy-spoon" }) {
   // WebSocket Live Updates
   const handleWsEvent = useCallback(
     (event) => {
-      if (
-        event?.type === "NEW_BOOKING" ||
-        event?.type === "TABLE_STATUS_UPDATED" ||
-        event?.type === "BOOKING_STATUS_UPDATED" ||
-        event?.type === "PAYMENT_COMPLETED" ||
-        event?.type === "PAYMENT_VERIFIED" ||
-        event?.type === "CASH_PAYMENT_CONFIRMED" ||
-        event?.type === "BILL_PAID"
-      ) {
+      if (event && event.type) {
         fetchAvailability(false);
       }
     },
