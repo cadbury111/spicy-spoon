@@ -23,18 +23,23 @@ export function broadcastCloudEvent(eventPayload) {
   } catch (err) {}
 }
 
-// Resolve API base URL dynamically for Dev, Production, and Custom Backends
+// Resolve API base URL dynamically for Dev, Production, Local Network (Wi-Fi), and Custom Backends
 function resolveApiBaseUrl() {
   if (import.meta.env.VITE_API_URL) {
     return import.meta.env.VITE_API_URL.replace(/\/$/, "").replace(/\/api$/, "") + "/api";
   }
   if (typeof window !== "undefined") {
     const hostname = window.location.hostname;
+    const protocol = window.location.protocol === "https:" ? "https:" : "http:";
     if (hostname === "localhost" || hostname === "127.0.0.1") {
-      return "http://localhost:5000/api";
+      return `${protocol}//localhost:5000/api`;
+    }
+    // Match local network IP addresses (e.g. 192.168.x.x, 10.x.x.x, 172.x.x.x) so mobile and laptop share the same backend server!
+    if (/^(\d{1,3}\.){3}\d{1,3}$/.test(hostname)) {
+      return `${protocol}//${hostname}:5000/api`;
     }
   }
-  return null; // When hosted (e.g. on Vercel) without backend URL, run instant client engine with cloud sync!
+  return null;
 }
 
 const API_BASE_URL = resolveApiBaseUrl();
@@ -58,6 +63,9 @@ export function getWsUrl() {
     const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
     if (hostname === "localhost" || hostname === "127.0.0.1") {
       return `${protocol}//localhost:5000`;
+    }
+    if (/^(\d{1,3}\.){3}\d{1,3}$/.test(hostname)) {
+      return `${protocol}//${hostname}:5000`;
     }
   }
   return null;
@@ -116,9 +124,16 @@ function setLocalDemoData(key, data) {
 
 function dispatchClientEvent(type, data = {}) {
   try {
+    const tables = getLocalDemoData("spicy_demo_tables", INITIAL_DEMO_TABLES);
+    const orders = getLocalDemoData("spicy_demo_orders", INITIAL_DEMO_ORDERS);
+    const bookings = getLocalDemoData("spicy_demo_bookings", INITIAL_DEMO_BOOKINGS);
+
     const payload = {
       type,
       data,
+      tables,
+      orders,
+      bookings,
       senderDeviceId: getDeviceId(),
       timestamp: Date.now(),
     };
