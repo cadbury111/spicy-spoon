@@ -359,6 +359,87 @@
   border-radius: 20px;
 }
 
+/* Automatic Verification Live Banner */
+.auto-verify-live-banner {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  background: rgba(16, 185, 129, 0.08);
+  border: 1px solid rgba(16, 185, 129, 0.3);
+  padding: 14px 16px;
+  border-radius: 14px;
+  text-align: left;
+  margin-top: 10px;
+}
+
+.listening-pulse-ring {
+  position: relative;
+  width: 38px;
+  height: 38px;
+  background: rgba(16, 185, 129, 0.2);
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.radio-icon {
+  color: #10b981;
+  animation: pulseRotate 2s infinite ease-in-out;
+}
+
+.clock-icon-pulse {
+  color: #f59e0b;
+}
+
+.pulse-dot {
+  position: absolute;
+  width: 100%;
+  height: 100%;
+  border-radius: 50%;
+  background: rgba(16, 185, 129, 0.4);
+  animation: radarPulse 1.8s infinite ease-out;
+}
+
+.pulse-dot.orange {
+  background: rgba(245, 158, 11, 0.4);
+}
+
+@keyframes radarPulse {
+  0% {
+    transform: scale(0.9);
+    opacity: 0.8;
+  }
+  100% {
+    transform: scale(1.6);
+    opacity: 0;
+  }
+}
+
+@keyframes pulseRotate {
+  0%, 100% {
+    transform: scale(1);
+  }
+  50% {
+    transform: scale(1.15);
+  }
+}
+
+.verify-text-info h4 {
+  margin: 0 0 4px 0;
+  color: #10b981;
+  font-size: 0.95rem;
+  font-weight: 700;
+}
+
+.verify-text-info p {
+  margin: 0;
+  font-size: 0.8rem;
+  color: #c9b5a8;
+  line-height: 1.4;
+}
+
 .btn-complete-pay {
   width: 100%;
   background: linear-gradient(135deg, #10b981, #059669);
@@ -384,6 +465,13 @@
 .btn-complete-pay.cash-btn {
   background: linear-gradient(135deg, #f59e0b, #d97706);
   box-shadow: 0 6px 20px rgba(245, 158, 11, 0.35);
+}
+
+.secure-footnote {
+  font-size: 0.78rem;
+  color: #a89487;
+  text-align: center;
+  margin: 4px 0 0 0;
 }
 
 /* Card Checkout */
@@ -425,9 +513,9 @@
   background: rgba(245, 158, 11, 0.1);
   border: 1px solid rgba(245, 158, 11, 0.3);
   border-radius: 16px;
-  padding: 24px;
+  padding: 20px;
   text-align: center;
-  margin-bottom: 20px;
+  margin-bottom: 16px;
 }
 
 .cash-alert-icon {
@@ -444,6 +532,42 @@
   margin: 0;
   font-size: 0.85rem;
   color: #d1b8a9;
+}
+
+.cash-waiting-admin-card {
+  display: flex;
+  align-items: flex-start;
+  gap: 14px;
+  background: rgba(245, 158, 11, 0.08);
+  border: 1px dashed rgba(245, 158, 11, 0.4);
+  padding: 16px;
+  border-radius: 14px;
+  text-align: left;
+}
+
+.cash-wait-info h4 {
+  margin: 0 0 6px 0;
+  color: #f59e0b;
+  font-size: 0.95rem;
+  font-weight: 700;
+}
+
+.cash-wait-info p {
+  margin: 0 0 10px 0;
+  font-size: 0.82rem;
+  color: #d1b8a9;
+  line-height: 1.45;
+}
+
+.cash-amount-tag {
+  display: inline-block;
+  background: #25160e;
+  border: 1px solid rgba(245, 158, 11, 0.3);
+  color: #fbbf24;
+  font-size: 0.8rem;
+  font-weight: 700;
+  padding: 4px 10px;
+  border-radius: 6px;
 }
 
 /* Digital Receipt View */

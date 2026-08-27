@@ -145,13 +145,21 @@ function CustomerMenu() {
           "ORDER_STATUS_UPDATED",
           "BILL_GENERATED",
           "PAYMENT_COMPLETED",
+          "PAYMENT_VERIFIED",
+          "CASH_PAYMENT_CONFIRMED",
+          "BILL_PAID",
           "TABLE_STATUS_UPDATED",
         ].includes(event.type)
       ) {
         fetchActiveOrders();
         fetchTables();
 
-        if (event.type === "PAYMENT_COMPLETED" && (event.data?.bill?.table_number === tableNumber || event.data?.table?.table_number === tableNumber)) {
+        if (
+          ["PAYMENT_COMPLETED", "PAYMENT_VERIFIED", "CASH_PAYMENT_CONFIRMED", "BILL_PAID"].includes(event.type) &&
+          (event.data?.bill?.table_number === tableNumber ||
+            event.data?.table?.table_number === tableNumber ||
+            event.data?.table_number === tableNumber)
+        ) {
           setActiveOrders([]);
           setActiveSessionId(null);
           localStorage.removeItem(`spicy_session_${tableNumber}`);

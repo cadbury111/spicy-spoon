@@ -645,6 +645,21 @@ async function handleClientFallback(endpoint, options = {}, originalError) {
 
   // 5. PAYMENTS
   if (endpoint.startsWith("/payments")) {
+    if (endpoint.includes("cash-requests")) {
+      const bills = getLocalDemoData("spicy_demo_bills", []);
+      const pendingCashBills = bills.filter((b) => b.payment_method === "CASH" && b.status !== "PAID");
+      return pendingCashBills.map((b) => ({
+        id: b.id,
+        bill_id: b.id,
+        bill_number: b.bill_number,
+        table_number: b.table_number,
+        grand_total: b.grand_total,
+        amount: b.grand_total,
+        status: "CASH_PENDING",
+        payment_method: "CASH",
+      }));
+    }
+
     if (endpoint.includes("create")) {
       const bills = getLocalDemoData("spicy_demo_bills", []);
       const billId = body.bill_id || body.billId;
@@ -663,14 +678,89 @@ async function handleClientFallback(endpoint, options = {}, originalError) {
       const upiIntentUrl = `upi://pay?pa=${upiVpa}&pn=${restaurantName}&am=${amountStr}&cu=INR&tn=${note}&tr=${txn}`;
 
       const upiQrCode = await generateQrDataUrl(upiIntentUrl);
+      const isCash = body.payment_method === "CASH";
+
+      if (isCash) {
+        // Update bill payment_method to CASH, table to PAYMENT_PENDING
+        let updatedBills = bills.map((b) => (b.id === targetBill.id ? { ...b, payment_method: "CASH" } : b));
+        setLocalDemoData("spicy_demo_bills", updatedBills);
+
+        tables = tables.map((t) => (t.table_number === targetBill.table_number ? { ...t, status: "PAYMENT_PENDING" } : t));
+        setLocalDemoData("spicy_demo_tables", tables);
+
+        const targetTable = tables.find((t) => t.table_number === targetBill.table_number) || tables[0];
+
+        const cashEventPayload = {
+          bill: targetBill,
+          table: targetTable,
+          transactionId: txn,
+          amount: targetBill.grand_total,
+          status: "CASH_PENDING",
+        };
+
+        dispatchClientEvent("CASH_PAYMENT_REQUESTED", cashEventPayload);
+        dispatchClientEvent("PAYMENT_PENDING", cashEventPayload);
+        dispatchClientEvent("TABLE_STATUS_UPDATED", targetTable);
+      } else {
+        dispatchClientEvent("PAYMENT_PENDING", {
+          bill: targetBill,
+          payment_method: body.payment_method || "UPI",
+          transactionId: txn,
+          amount: targetBill.grand_total,
+        });
+
+        // Automatic UPI verification after 3.5 seconds in hosted/standalone demo mode
+        if (body.payment_method === "UPI") {
+          setTimeout(() => {
+            try {
+              let currentBills = getLocalDemoData("spicy_demo_bills", []);
+              let bToPay = currentBills.find((b) => b.id === targetBill.id);
+              if (bToPay && bToPay.status !== "PAID") {
+                currentBills = currentBills.map((b) => (b.id === targetBill.id ? { ...b, status: "PAID", payment_method: "UPI" } : b));
+                setLocalDemoData("spicy_demo_bills", currentBills);
+
+                let curTables = getLocalDemoData("spicy_demo_tables", DEFAULT_TABLES);
+                curTables = curTables.map((t) =>
+                  t.table_number === targetBill.table_number
+                    ? { ...t, status: "AVAILABLE", current_order_id: null, current_session_id: null, current_booking_id: null }
+                    : t
+                );
+                setLocalDemoData("spicy_demo_tables", curTables);
+                const curTbl = curTables.find((t) => t.table_number === targetBill.table_number) || curTables[0];
+
+                const autoReceipt = {
+                  restaurant_name: "Spicy Spoon",
+                  restaurant_address: "Tiruppur-Palladam road, Tamil Nadu",
+                  restaurant_phone: "+91 73958 77142",
+                  bill: { ...targetBill, status: "PAID", payment_method: "UPI" },
+                  payment: {
+                    id: Date.now(),
+                    payment_method: "UPI",
+                    transaction_id: txn,
+                    amount: targetBill.grand_total,
+                    status: "SUCCESS",
+                  },
+                  table: curTbl,
+                  items: targetBill.items || [],
+                };
+
+                dispatchClientEvent("PAYMENT_VERIFIED", autoReceipt);
+                dispatchClientEvent("BILL_PAID", autoReceipt);
+                dispatchClientEvent("PAYMENT_COMPLETED", autoReceipt);
+                dispatchClientEvent("TABLE_STATUS_UPDATED", curTbl);
+              }
+            } catch (e) {}
+          }, 3500);
+        }
+      }
 
       return {
-        message: "Payment initialized",
+        message: `Payment initiated via ${body.payment_method || "UPI"}`,
         payment: {
           id: Date.now(),
           transaction_id: txn,
           amount: targetBill.grand_total,
-          status: body.payment_method === "CASH" ? "CASH_PENDING" : "PENDING",
+          status: isCash ? "CASH_PENDING" : "PENDING",
         },
         upiQrCode,
         upiIntentUrl,
@@ -704,13 +794,18 @@ async function handleClientFallback(endpoint, options = {}, originalError) {
           payment_method: isCash ? "CASH" : "ONLINE",
           transaction_id: body.transaction_id || `PAY-${Date.now().toString().slice(-6)}`,
           amount: paidBill.grand_total,
-          status: isCash ? "CASH_PAID" : "SUCCESS",
+          status: "SUCCESS",
         },
         table: targetTable,
         items: paidBill.items || [],
       };
 
-      dispatchClientEvent("PAYMENT_COMPLETED", { bill: paidBill, receipt, table: targetTable });
+      if (isCash) {
+        dispatchClientEvent("CASH_PAYMENT_CONFIRMED", receipt);
+      }
+      dispatchClientEvent("PAYMENT_VERIFIED", receipt);
+      dispatchClientEvent("BILL_PAID", receipt);
+      dispatchClientEvent("PAYMENT_COMPLETED", receipt);
       dispatchClientEvent("TABLE_STATUS_UPDATED", targetTable);
 
       return {
@@ -977,8 +1072,10 @@ export const api = {
   createPayment: (data) => request("/payments/create", { method: "POST", body: data }),
   verifyPayment: (data) => request("/payments/verify", { method: "POST", body: data }),
   confirmCashPayment: (data) => request("/payments/cash-confirm", { method: "POST", body: data }),
+  getCashRequests: () => request("/payments/cash-requests"),
   getPayments: () => request("/payments"),
   getPayment: (id) => request(`/payments/${id}`),
+  getPaymentByBill: (billId) => request(`/payments/by-bill/${billId}`),
 
   // Reports & Analytics (Admin Only)
   getAnalytics: () => request("/reports/analytics"),

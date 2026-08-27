@@ -16,6 +16,87 @@ function generateTransactionId(prefix = "TXN") {
   return `${prefix}-${timestamp}-${random}`;
 }
 
+// Helper to assemble full digital receipt
+function buildReceipt(billId, paymentId) {
+  const bill = db.prepare("SELECT * FROM bills WHERE id = ?").get(billId);
+  const payment = db.prepare("SELECT * FROM payments WHERE id = ?").get(paymentId);
+  const table = db.prepare("SELECT * FROM restaurant_tables WHERE id = ?").get(bill?.table_id);
+  const items = db.prepare(
+    "SELECT * FROM order_items WHERE order_id IN (SELECT id FROM orders WHERE session_id = ? OR id = ?)"
+  ).all(bill?.session_id || "", bill?.order_id || 0);
+  const restaurant = db.prepare("SELECT * FROM restaurants WHERE id = 1").get();
+
+  return {
+    restaurant_name: restaurant?.name || "Spicy Spoon",
+    restaurant_address: restaurant?.address || "Tiruppur-Palladam road, Tamil Nadu",
+    restaurant_phone: restaurant?.phone || "+91 73958 77142",
+    bill,
+    payment,
+    table,
+    items,
+    date: new Date().toISOString(),
+  };
+}
+
+// Automatic UPI Verification Simulator / Engine (Server-Side)
+function autoVerifyUpiPayment(paymentId, delayMs = 3500) {
+  setTimeout(() => {
+    try {
+      const payment = db.prepare("SELECT * FROM payments WHERE id = ?").get(paymentId);
+      if (!payment || payment.status !== "PENDING" || payment.payment_method !== "UPI") {
+        return;
+      }
+
+      const bill = db.prepare("SELECT * FROM bills WHERE id = ?").get(payment.bill_id);
+      if (!bill || bill.status === "PAID") return;
+
+      // 1. Mark Payment SUCCESS
+      db.prepare(`
+        UPDATE payments
+        SET status = 'SUCCESS', gateway_reference = 'AUTO_UPI_VERIFIED', signature_verified = 1, paid_at = CURRENT_TIMESTAMP
+        WHERE id = ?
+      `).run(payment.id);
+
+      // 2. Mark Bill PAID
+      db.prepare("UPDATE bills SET status = 'PAID' WHERE id = ?").run(bill.id);
+
+      // 3. Mark Orders COMPLETED
+      if (payment.session_id) {
+        db.prepare("UPDATE orders SET status = 'COMPLETED', updated_at = CURRENT_TIMESTAMP WHERE session_id = ?").run(
+          payment.session_id
+        );
+      } else {
+        db.prepare("UPDATE orders SET status = 'COMPLETED', updated_at = CURRENT_TIMESTAMP WHERE id = ?").run(
+          payment.order_id
+        );
+      }
+
+      // 4. Release Table to AVAILABLE
+      db.prepare(`
+        UPDATE restaurant_tables
+        SET status = 'AVAILABLE', current_order_id = NULL, current_session_id = NULL, current_booking_id = NULL
+        WHERE id = ?
+      `).run(bill.table_id);
+
+      // 5. Complete Booking if attached
+      const order = db.prepare("SELECT booking_id FROM orders WHERE id = ?").get(payment.order_id);
+      if (order && order.booking_id) {
+        db.prepare("UPDATE bookings SET status = 'COMPLETED' WHERE id = ?").run(order.booking_id);
+      }
+
+      const fullReceipt = buildReceipt(bill.id, payment.id);
+
+      // Broadcast Real-time Events
+      broadcast("PAYMENT_VERIFIED", fullReceipt);
+      broadcast("BILL_PAID", fullReceipt);
+      broadcast("PAYMENT_COMPLETED", fullReceipt);
+      broadcast("TABLE_STATUS_UPDATED", fullReceipt.table);
+    } catch (e) {
+      console.error("Auto UPI verification error:", e);
+    }
+  }, delayMs);
+}
+
 // 1. Get all payments (Admin Ledger - ADMIN ONLY)
 router.get("/", verifyStaffAuth(["ADMIN"]), (req, res) => {
   try {
@@ -37,7 +118,31 @@ router.get("/", verifyStaffAuth(["ADMIN"]), (req, res) => {
   }
 });
 
-// 2. Get single payment status
+// 2. Get active Cash Payment Requests (Pending Admin confirmation)
+router.get("/cash-requests", (req, res) => {
+  try {
+    const cashReqs = db.prepare(`
+      SELECT 
+        p.*,
+        b.bill_number,
+        b.table_number,
+        b.customer_name,
+        b.grand_total as bill_amount,
+        b.subtotal,
+        b.tax,
+        b.service_charge
+      FROM payments p
+      JOIN bills b ON p.bill_id = b.id
+      WHERE p.payment_method = 'CASH' AND p.status = 'CASH_PENDING' AND b.status != 'PAID'
+      ORDER BY p.id DESC
+    `).all();
+    res.json(cashReqs);
+  } catch (error) {
+    res.status(500).json({ message: "Failed to fetch cash requests", error: error.message });
+  }
+});
+
+// 3. Get single payment status by ID or transaction ID
 router.get("/:id", (req, res) => {
   try {
     const payment = db.prepare(`
@@ -46,7 +151,8 @@ router.get("/:id", (req, res) => {
         b.bill_number,
         b.table_number,
         b.customer_name,
-        b.grand_total as bill_amount
+        b.grand_total as bill_amount,
+        b.status as bill_status
       FROM payments p
       JOIN bills b ON p.bill_id = b.id
       WHERE p.id = ? OR p.transaction_id = ? OR p.payment_id = ?
@@ -61,7 +167,34 @@ router.get("/:id", (req, res) => {
   }
 });
 
-// 3. Create Gateway Order (Razorpay Order Creation with Sandbox Fallback)
+// 4. Get payment by Bill ID
+router.get("/by-bill/:billId", (req, res) => {
+  try {
+    const billId = Number(req.params.billId);
+    const payment = db.prepare(`
+      SELECT 
+        p.*,
+        b.bill_number,
+        b.table_number,
+        b.customer_name,
+        b.grand_total as bill_amount,
+        b.status as bill_status
+      FROM payments p
+      JOIN bills b ON p.bill_id = b.id
+      WHERE p.bill_id = ?
+      ORDER BY p.id DESC
+    `).get(billId);
+
+    if (!payment) {
+      return res.status(404).json({ message: "No payment record for this bill" });
+    }
+    res.json(payment);
+  } catch (error) {
+    res.status(500).json({ message: "Error fetching payment by bill", error: error.message });
+  }
+});
+
+// 5. Create Gateway Order (Razorpay Order Creation with Sandbox Fallback)
 router.post("/create-gateway-order", (req, res) => {
   try {
     const { bill_id, billId } = req.body;
@@ -99,7 +232,7 @@ router.post("/create-gateway-order", (req, res) => {
   }
 });
 
-// 4. Create Payment Request (UPI QR, Card Intent, or Cash Request)
+// 6. Create Payment Request (UPI QR with auto-verify, Card Intent, or Cash Request)
 router.post("/create", async (req, res) => {
   try {
     const { bill_id, billId, payment_method, idempotency_key } = req.body;
@@ -128,9 +261,20 @@ router.post("/create", async (req, res) => {
     if (idempotency_key) {
       const existingPayment = db.prepare("SELECT * FROM payments WHERE idempotency_key = ?").get(idempotency_key);
       if (existingPayment) {
+        let upiDataUrl = null;
+        let upiIntentUrl = null;
+        if (existingPayment.payment_method === "UPI") {
+          const upiVpa = "spicyspoon@upi";
+          const restaurantName = encodeURIComponent("Spicy Spoon Restaurant");
+          const note = encodeURIComponent(`Bill ${bill.bill_number}`);
+          upiIntentUrl = `upi://pay?pa=${upiVpa}&pn=${restaurantName}&am=${bill.grand_total.toFixed(2)}&cu=INR&tn=${note}&tr=${existingPayment.transaction_id}`;
+          upiDataUrl = await QRCode.toDataURL(upiIntentUrl, { width: 300, margin: 2 });
+        }
         return res.json({
           message: "Existing payment record retrieved via idempotency key",
           payment: existingPayment,
+          upiQrCode: upiDataUrl,
+          upiIntentUrl,
         });
       }
     }
@@ -168,13 +312,34 @@ router.post("/create", async (req, res) => {
       const note = encodeURIComponent(`Bill ${bill.bill_number}`);
       upiIntentUrl = `upi://pay?pa=${upiVpa}&pn=${restaurantName}&am=${bill.grand_total.toFixed(2)}&cu=INR&tn=${note}&tr=${transactionId}`;
       upiDataUrl = await QRCode.toDataURL(upiIntentUrl, { width: 300, margin: 2 });
+
+      // Broadcast PAYMENT_PENDING
+      broadcast("PAYMENT_PENDING", { bill, payment_method: "UPI", transactionId, amount: bill.grand_total });
+
+      // Automatically trigger server-side verification in development/sandbox mode
+      autoVerifyUpiPayment(paymentId, 4000);
     }
 
     if (method === "CASH") {
       db.prepare("UPDATE restaurant_tables SET status = 'PAYMENT_PENDING' WHERE id = ?").run(bill.table_id);
       const updatedTable = db.prepare("SELECT * FROM restaurant_tables WHERE id = ?").get(bill.table_id);
-      broadcast("CASH_PAYMENT_REQUESTED", { bill, table: updatedTable, transactionId });
+
+      const cashPayload = {
+        bill,
+        table: updatedTable,
+        transactionId,
+        paymentId,
+        amount: bill.grand_total,
+        status: "CASH_PENDING",
+      };
+
+      broadcast("CASH_PAYMENT_REQUESTED", cashPayload);
+      broadcast("PAYMENT_PENDING", cashPayload);
       broadcast("TABLE_STATUS_UPDATED", updatedTable);
+    }
+
+    if (method === "CARD") {
+      broadcast("PAYMENT_PENDING", { bill, payment_method: "CARD", transactionId, amount: bill.grand_total });
     }
 
     const createdPayment = db.prepare("SELECT * FROM payments WHERE id = ?").get(paymentId);
@@ -191,7 +356,7 @@ router.post("/create", async (req, res) => {
   }
 });
 
-// 5. Verify Payment & Atomic Table Release (Idempotent & Gateway Signature Verification)
+// 7. Verify Payment & Atomic Table Release (Card / Gateway / Idempotent Verification)
 router.post("/verify", (req, res) => {
   try {
     const {
@@ -223,13 +388,13 @@ router.post("/verify", (req, res) => {
       `).get(targetKey);
 
       if (existingSuccess) {
-        const table = db.prepare("SELECT * FROM restaurant_tables WHERE table_number = ?").get(existingSuccess.table_number);
-        const bill = db.prepare("SELECT * FROM bills WHERE id = ?").get(existingSuccess.bill_id);
+        const fullReceipt = buildReceipt(existingSuccess.bill_id, existingSuccess.id);
         return res.json({
           message: "Payment already verified (Idempotent replay)",
           payment: existingSuccess,
-          bill,
-          table,
+          bill: fullReceipt.bill,
+          table: fullReceipt.table,
+          receipt: fullReceipt,
         });
       }
     }
@@ -243,11 +408,10 @@ router.post("/verify", (req, res) => {
     `).get(targetTxn || "", targetPaymentId || 0, targetKey || "");
 
     if (!payment) {
-      // If payment record was not pre-created (e.g. direct Razorpay checkout submit), create it
       if (req.body.bill_id) {
         const bill = db.prepare("SELECT * FROM bills WHERE id = ?").get(Number(req.body.bill_id));
         if (bill) {
-          const autoTxn = generateTransactionId("ONLINE");
+          const autoTxn = generateTransactionId("CARD");
           const autoKey = targetKey || `AUTO-${Date.now()}`;
           const insertStmt = db.prepare(`
             INSERT INTO payments (
@@ -272,9 +436,8 @@ router.post("/verify", (req, res) => {
     }
 
     if (payment.status === "SUCCESS" || payment.status === "CASH_PAID") {
-      const bill = db.prepare("SELECT * FROM bills WHERE id = ?").get(payment.bill_id);
-      const table = db.prepare("SELECT * FROM restaurant_tables WHERE id = ?").get(payment.table_id);
-      return res.json({ message: "Payment already verified", payment, bill, table });
+      const fullReceipt = buildReceipt(payment.bill_id, payment.id);
+      return res.json({ message: "Payment already verified", payment, bill: fullReceipt.bill, table: fullReceipt.table, receipt: fullReceipt });
     }
 
     // 1. Verify Razorpay Gateway Signature (if provided)
@@ -291,7 +454,6 @@ router.post("/verify", (req, res) => {
         return res.status(400).json({ message: "Invalid Razorpay payment signature verification failed." });
       }
     } else {
-      // In DEV_SANDBOX mode, online payments are validated directly
       signatureVerified = 1;
     }
 
@@ -313,7 +475,6 @@ router.post("/verify", (req, res) => {
     }
 
     // 3. ATOMIC SUCCESS TRANSACTION
-    // a. Update payment
     const finalMethod = payment.payment_method;
     const finalStatus = finalMethod === "CASH" ? "CASH_PAID" : "SUCCESS";
     const ref = gateway_reference || razorpay_payment_id || `VERIFIED_${Date.now()}`;
@@ -324,64 +485,40 @@ router.post("/verify", (req, res) => {
       WHERE id = ?
     `).run(finalStatus, ref, signatureVerified, payment.id);
 
-    // b. Update bill status to PAID
     db.prepare("UPDATE bills SET status = 'PAID' WHERE id = ?").run(payment.bill_id);
 
-    // c. Complete all orders in the session
     if (payment.session_id) {
-      db.prepare(`
-        UPDATE orders
-        SET status = 'COMPLETED', updated_at = CURRENT_TIMESTAMP
-        WHERE session_id = ?
-      `).run(payment.session_id);
+      db.prepare("UPDATE orders SET status = 'COMPLETED', updated_at = CURRENT_TIMESTAMP WHERE session_id = ?").run(
+        payment.session_id
+      );
     } else {
       db.prepare("UPDATE orders SET status = 'COMPLETED', updated_at = CURRENT_TIMESTAMP WHERE id = ?").run(payment.order_id);
     }
 
-    // d. Release table back to AVAILABLE
     db.prepare(`
       UPDATE restaurant_tables
       SET status = 'AVAILABLE', current_order_id = NULL, current_session_id = NULL, current_booking_id = NULL
       WHERE id = ?
     `).run(payment.table_id);
 
-    // e. Mark booking as COMPLETED if attached
     const order = db.prepare("SELECT booking_id FROM orders WHERE id = ?").get(payment.order_id);
     if (order && order.booking_id) {
       db.prepare("UPDATE bookings SET status = 'COMPLETED' WHERE id = ?").run(order.booking_id);
     }
 
-    const updatedPayment = db.prepare("SELECT * FROM payments WHERE id = ?").get(payment.id);
-    const updatedBill = db.prepare("SELECT * FROM bills WHERE id = ?").get(payment.bill_id);
-    const updatedTable = db.prepare("SELECT * FROM restaurant_tables WHERE id = ?").get(payment.table_id);
+    const fullReceipt = buildReceipt(payment.bill_id, payment.id);
 
-    // Fetch items for digital receipt
-    const items = db.prepare("SELECT * FROM order_items WHERE order_id IN (SELECT id FROM orders WHERE session_id = ? OR id = ?)").all(
-      payment.session_id || "",
-      payment.order_id
-    );
-
-    const restaurant = db.prepare("SELECT * FROM restaurants WHERE id = 1").get();
-
-    const fullReceipt = {
-      restaurant_name: restaurant?.name || "Spicy Spoon",
-      restaurant_address: restaurant?.address || "Tiruppur-Palladam road, Tamil Nadu",
-      restaurant_phone: restaurant?.phone || "+91 73958 77142",
-      bill: updatedBill,
-      payment: updatedPayment,
-      table: updatedTable,
-      items,
-      date: new Date().toISOString(),
-    };
-
+    // Broadcast Real-time Events
+    broadcast("PAYMENT_VERIFIED", fullReceipt);
+    broadcast("BILL_PAID", fullReceipt);
     broadcast("PAYMENT_COMPLETED", fullReceipt);
-    broadcast("TABLE_STATUS_UPDATED", updatedTable);
+    broadcast("TABLE_STATUS_UPDATED", fullReceipt.table);
 
     res.json({
       message: "Payment verified, bill settled, and table released successfully!",
-      payment: updatedPayment,
-      bill: updatedBill,
-      table: updatedTable,
+      payment: fullReceipt.payment,
+      bill: fullReceipt.bill,
+      table: fullReceipt.table,
       receipt: fullReceipt,
     });
   } catch (error) {
@@ -390,7 +527,7 @@ router.post("/verify", (req, res) => {
   }
 });
 
-// 6. Staff / Admin Confirm Cash Payment (ADMIN ONLY)
+// 8. Admin Confirm Cash Payment (ADMIN ONLY)
 router.post("/cash-confirm", verifyStaffAuth(["ADMIN"]), (req, res) => {
   try {
     const { bill_id, billId, transaction_id } = req.body;
@@ -410,18 +547,16 @@ router.post("/cash-confirm", verifyStaffAuth(["ADMIN"]), (req, res) => {
 
     db.prepare(`
       UPDATE payments
-      SET status = 'CASH_PAID', gateway_response = 'ADMIN_CASH_CONFIRMED', signature_verified = 1, paid_at = CURRENT_TIMESTAMP
+      SET status = 'SUCCESS', gateway_response = 'ADMIN_CASH_CONFIRMED', signature_verified = 1, paid_at = CURRENT_TIMESTAMP
       WHERE id = ?
     `).run(payment.id);
 
     db.prepare("UPDATE bills SET status = 'PAID' WHERE id = ?").run(payment.bill_id);
 
     if (payment.session_id) {
-      db.prepare(`
-        UPDATE orders
-        SET status = 'COMPLETED', updated_at = CURRENT_TIMESTAMP
-        WHERE session_id = ?
-      `).run(payment.session_id);
+      db.prepare("UPDATE orders SET status = 'COMPLETED', updated_at = CURRENT_TIMESTAMP WHERE session_id = ?").run(
+        payment.session_id
+      );
     } else {
       db.prepare("UPDATE orders SET status = 'COMPLETED', updated_at = CURRENT_TIMESTAMP WHERE id = ?").run(payment.order_id);
     }
@@ -432,22 +567,26 @@ router.post("/cash-confirm", verifyStaffAuth(["ADMIN"]), (req, res) => {
       WHERE id = ?
     `).run(payment.table_id);
 
-    const updatedPayment = db.prepare("SELECT * FROM payments WHERE id = ?").get(payment.id);
-    const updatedBill = db.prepare("SELECT * FROM bills WHERE id = ?").get(payment.bill_id);
-    const updatedTable = db.prepare("SELECT * FROM restaurant_tables WHERE id = ?").get(payment.table_id);
+    const order = db.prepare("SELECT booking_id FROM orders WHERE id = ?").get(payment.order_id);
+    if (order && order.booking_id) {
+      db.prepare("UPDATE bookings SET status = 'COMPLETED' WHERE id = ?").run(order.booking_id);
+    }
 
-    broadcast("PAYMENT_COMPLETED", {
-      payment: updatedPayment,
-      bill: updatedBill,
-      table: updatedTable,
-    });
-    broadcast("TABLE_STATUS_UPDATED", updatedTable);
+    const fullReceipt = buildReceipt(payment.bill_id, payment.id);
+
+    // Broadcast Real-time Events
+    broadcast("CASH_PAYMENT_CONFIRMED", fullReceipt);
+    broadcast("PAYMENT_VERIFIED", fullReceipt);
+    broadcast("BILL_PAID", fullReceipt);
+    broadcast("PAYMENT_COMPLETED", fullReceipt);
+    broadcast("TABLE_STATUS_UPDATED", fullReceipt.table);
 
     res.json({
       message: "Cash payment confirmed and table released successfully!",
-      payment: updatedPayment,
-      bill: updatedBill,
-      table: updatedTable,
+      payment: fullReceipt.payment,
+      bill: fullReceipt.bill,
+      table: fullReceipt.table,
+      receipt: fullReceipt,
     });
   } catch (error) {
     console.error("Cash confirm error:", error);

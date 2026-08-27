@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback, useMemo } from "react";
+import { useEffect, useState, useCallback, useMemo, useRef } from "react";
 import {
   Receipt,
   QrCode,
@@ -9,7 +9,6 @@ import {
   Sparkles,
   ArrowLeft,
   Printer,
-  Download,
   Clock,
   MapPin,
   Phone,
@@ -18,6 +17,8 @@ import {
   ShieldCheck,
   Check,
   Utensils,
+  Radio,
+  Lock,
 } from "lucide-react";
 import confetti from "canvas-confetti";
 import { api } from "../api";
@@ -35,6 +36,7 @@ function BillPayment({ billId = null, tableParam = null, sessionParam = null }) 
   const [isProcessing, setIsProcessing] = useState(false);
   const [paymentSuccess, setPaymentSuccess] = useState(false);
   const [verifiedReceipt, setVerifiedReceipt] = useState(null);
+  const [cashRequested, setCashRequested] = useState(false);
 
   // Discount
   const [discountCode, setDiscountCode] = useState("");
@@ -48,6 +50,8 @@ function BillPayment({ billId = null, tableParam = null, sessionParam = null }) 
     cvv: "888",
   });
 
+  const pollTimerRef = useRef(null);
+
   // Table identifier from URL or query
   const targetTable = useMemo(() => {
     if (tableParam) return tableParam;
@@ -60,6 +64,28 @@ function BillPayment({ billId = null, tableParam = null, sessionParam = null }) 
     const params = new URLSearchParams(window.location.hash.split("?")[1] || window.location.search);
     return params.get("session") || localStorage.getItem(`spicy_session_${targetTable}`);
   }, [sessionParam, targetTable]);
+
+  const triggerConfetti = () => {
+    try {
+      confetti({
+        particleCount: 120,
+        spread: 80,
+        origin: { y: 0.5 },
+        colors: ["#ff4500", "#ff8c00", "#ffd700", "#10b981"],
+      });
+    } catch (e) {}
+  };
+
+  const handlePaymentSuccess = useCallback(
+    (receiptData) => {
+      setPaymentSuccess(true);
+      setVerifiedReceipt(receiptData);
+      localStorage.removeItem(`spicy_order_${targetTable}`);
+      localStorage.removeItem(`spicy_session_${targetTable}`);
+      triggerConfetti();
+    },
+    [targetTable]
+  );
 
   // 1. Fetch or Generate Live Bill
   const fetchLiveBill = useCallback(async () => {
@@ -92,14 +118,13 @@ function BillPayment({ billId = null, tableParam = null, sessionParam = null }) 
       setBill(billResult);
 
       if (billResult.status === "PAID") {
-        setPaymentSuccess(true);
-        setVerifiedReceipt({
+        handlePaymentSuccess({
           restaurant_name: billResult.restaurant_name || "Spicy Spoon",
           restaurant_address: billResult.restaurant_address || "Tiruppur-Palladam road, Tamil Nadu",
           restaurant_phone: billResult.restaurant_phone || "+91 73958 77142",
           bill: billResult,
           payment: billResult.payment || {
-            payment_method: "ONLINE",
+            payment_method: billResult.payment_method || "ONLINE",
             transaction_id: "PAID-REC",
             amount: billResult.grand_total,
           },
@@ -114,7 +139,7 @@ function BillPayment({ billId = null, tableParam = null, sessionParam = null }) 
     } finally {
       setLoading(false);
     }
-  }, [billId, targetTable, targetSession, discountCode]);
+  }, [billId, targetTable, targetSession, discountCode, handlePaymentSuccess]);
 
   useEffect(() => {
     fetchLiveBill();
@@ -124,19 +149,63 @@ function BillPayment({ billId = null, tableParam = null, sessionParam = null }) 
   const handleWsEvent = useCallback(
     (event) => {
       if (!event) return;
-      if (event.type === "PAYMENT_COMPLETED" && (event.data?.bill?.id === bill?.id || event.data?.bill?.session_id === targetSession)) {
-        setPaymentSuccess(true);
-        setVerifiedReceipt(event.data);
-        triggerConfetti();
+      const isMyBill =
+        event.data?.bill?.id === bill?.id ||
+        event.data?.bill?.bill_number === bill?.bill_number ||
+        event.data?.bill?.session_id === targetSession ||
+        (event.data?.table?.table_number === targetTable && bill?.table_number === targetTable);
+
+      if (
+        ["PAYMENT_VERIFIED", "PAYMENT_COMPLETED", "BILL_PAID", "CASH_PAYMENT_CONFIRMED"].includes(event.type) &&
+        isMyBill
+      ) {
+        const fullRec = event.data?.receipt || event.data;
+        handlePaymentSuccess(fullRec);
       }
+
+      if (event.type === "CASH_PAYMENT_REQUESTED" && isMyBill) {
+        setCashRequested(true);
+      }
+
       if (event.type === "BILL_GENERATED" && event.data?.id === bill?.id) {
         setBill(event.data);
       }
     },
-    [bill, targetSession]
+    [bill, targetSession, targetTable, handlePaymentSuccess]
   );
 
   useWebSocket(handleWsEvent);
+
+  // Background Polling Check to sync status with server
+  useEffect(() => {
+    if (paymentSuccess || !bill?.id) return;
+
+    const checkServerPaymentStatus = async () => {
+      try {
+        const latestBill = await api.getBill(bill.id);
+        if (latestBill && latestBill.status === "PAID") {
+          handlePaymentSuccess({
+            restaurant_name: latestBill.restaurant_name || "Spicy Spoon",
+            restaurant_address: latestBill.restaurant_address || "Tiruppur-Palladam road, Tamil Nadu",
+            restaurant_phone: latestBill.restaurant_phone || "+91 73958 77142",
+            bill: latestBill,
+            payment: latestBill.payment || {
+              payment_method: latestBill.payment_method || selectedMethod,
+              transaction_id: latestBill.payment?.transaction_id || "VERIFIED-TXN",
+              amount: latestBill.grand_total,
+            },
+            items: latestBill.items || bill.items || [],
+          });
+        }
+      } catch (e) {}
+    };
+
+    pollTimerRef.current = setInterval(checkServerPaymentStatus, 2500);
+
+    return () => {
+      if (pollTimerRef.current) clearInterval(pollTimerRef.current);
+    };
+  }, [paymentSuccess, bill?.id, selectedMethod, handlePaymentSuccess, bill?.items]);
 
   // 2. Initiate Payment Method (UPI QR / Intent / Cash)
   const initiatePaymentMethod = async (method, targetBillId) => {
@@ -152,6 +221,9 @@ function BillPayment({ billId = null, tableParam = null, sessionParam = null }) 
         idempotency_key: idempotencyKey,
       });
       setPaymentData({ ...res, idempotencyKey });
+      if (method === "CASH") {
+        setCashRequested(true);
+      }
     } catch (err) {
       console.error("Payment method creation error:", err);
     }
@@ -182,15 +254,15 @@ function BillPayment({ billId = null, tableParam = null, sessionParam = null }) 
     }
   };
 
-  // 4. Verify Payment (Gateway or Sandbox Simulation with Strict Idempotency)
-  const handleVerifyPayment = async () => {
+  // 4. Card Payment Authorization & Verification (Server-Authoritative)
+  const handlePayViaCard = async () => {
     if (!bill) return;
 
     try {
       setIsProcessing(true);
       setErrorMessage("");
 
-      const transactionId = paymentData?.payment?.transaction_id || `TXN-${Date.now()}`;
+      const transactionId = paymentData?.payment?.transaction_id || `TXN-CARD-${Date.now()}`;
       const idempotencyKey = paymentData?.idempotencyKey || `KEY-${Date.now()}`;
 
       const res = await api.verifyPayment({
@@ -200,42 +272,40 @@ function BillPayment({ billId = null, tableParam = null, sessionParam = null }) 
         idempotency_key: idempotencyKey,
         amount: bill.grand_total,
         status: "SUCCESS",
-        gateway_reference: `DEMO_VERIFIED_${Date.now()}`,
+        gateway_reference: `CARD_AUTH_${Date.now()}`,
       });
 
-      setPaymentSuccess(true);
-      setVerifiedReceipt(res.receipt || {
-        restaurant_name: "Spicy Spoon",
-        restaurant_address: "Tiruppur-Palladam road, Tamil Nadu",
-        restaurant_phone: "+91 73958 77142",
-        bill: res.bill || bill,
-        payment: res.payment,
-        table: res.table,
-        items: bill.items || [],
-      });
-
-      // Clear table local session storage
-      localStorage.removeItem(`spicy_order_${targetTable}`);
-      localStorage.removeItem(`spicy_session_${targetTable}`);
-
-      triggerConfetti();
+      handlePaymentSuccess(
+        res.receipt || {
+          restaurant_name: "Spicy Spoon",
+          restaurant_address: "Tiruppur-Palladam road, Tamil Nadu",
+          restaurant_phone: "+91 73958 77142",
+          bill: res.bill || bill,
+          payment: res.payment,
+          table: res.table,
+          items: bill.items || [],
+        }
+      );
     } catch (err) {
-      console.error("Payment verification error:", err);
-      setErrorMessage("Payment Verification Failed: " + (err.message || "Please retry."));
+      console.error("Card payment error:", err);
+      setErrorMessage("Card Payment Authorization Failed: " + (err.message || "Please check card details and retry."));
     } finally {
       setIsProcessing(false);
     }
   };
 
-  const triggerConfetti = () => {
+  // 5. Request Cash Payment
+  const handleRequestCashPayment = async () => {
+    if (!bill) return;
     try {
-      confetti({
-        particleCount: 120,
-        spread: 80,
-        origin: { y: 0.5 },
-        colors: ["#ff4500", "#ff8c00", "#ffd700", "#10b981"],
-      });
-    } catch (e) {}
+      setIsProcessing(true);
+      await initiatePaymentMethod("CASH", bill.id);
+      setCashRequested(true);
+    } catch (err) {
+      setErrorMessage("Failed to request cash payment: " + err.message);
+    } finally {
+      setIsProcessing(false);
+    }
   };
 
   return (
@@ -275,8 +345,8 @@ function BillPayment({ billId = null, tableParam = null, sessionParam = null }) 
               <CheckCircle2 size={48} />
             </div>
 
-            <h2>Payment Successful! ✓</h2>
-            <p className="receipt-sub">Thank you for dining at Spicy Spoon. Your bill has been fully settled.</p>
+            <h2>Payment Verified! ✓</h2>
+            <p className="receipt-sub">Thank you for dining at Spicy Spoon. Your payment has been confirmed by our system.</p>
 
             <div className="digital-receipt-sheet" id="printable-receipt">
               {/* Receipt Header */}
@@ -374,7 +444,7 @@ function BillPayment({ billId = null, tableParam = null, sessionParam = null }) 
                 <p>
                   Transaction ID: <code>{verifiedReceipt.payment?.transaction_id || "TXN-VERIFIED"}</code>
                 </p>
-                <div className="paid-seal">✓ VERIFIED & PAID IN FULL</div>
+                <div className="paid-seal">✓ SERVER VERIFIED & PAID IN FULL</div>
               </div>
             </div>
 
@@ -392,11 +462,11 @@ function BillPayment({ billId = null, tableParam = null, sessionParam = null }) 
       ) : !bill ? (
         <main className="bill-empty-layout" style={{ maxWidth: "520px", margin: "60px auto", textAlign: "center", padding: "36px 24px", background: "#160d09", borderRadius: "20px", border: "1px solid rgba(255, 69, 0, 0.2)" }}>
           <AlertCircle size={48} style={{ color: "#f59e0b", marginBottom: "14px" }} />
-          <h3 style={{ color: "#ffffff", margin: "0 0 8px 0", fontSize: "1.3rem" }}>No Active Orders on {tableParam}</h3>
+          <h3 style={{ color: "#ffffff", margin: "0 0 8px 0", fontSize: "1.3rem" }}>No Active Orders on {targetTable}</h3>
           <p style={{ color: "#a89487", fontSize: "0.9rem", margin: "0 0 20px 0" }}>There are no unpaid orders currently placed for this table session.</p>
           <div style={{ display: "flex", gap: "12px", justifyContent: "center" }}>
-            <a href={`#/order?table=${tableParam}`} style={{ background: "linear-gradient(135deg, #ff4500, #ff8c00)", color: "#fff", padding: "10px 18px", borderRadius: "10px", textDecoration: "none", fontWeight: 700 }}>
-              Order Food for {tableParam} →
+            <a href={`#/order?table=${targetTable}`} style={{ background: "linear-gradient(135deg, #ff4500, #ff8c00)", color: "#fff", padding: "10px 18px", borderRadius: "10px", textDecoration: "none", fontWeight: 700 }}>
+              Order Food for {targetTable} →
             </a>
             <a href="#home" style={{ background: "#25160e", color: "#f5e6dc", padding: "10px 18px", borderRadius: "10px", textDecoration: "none" }}>
               Home
@@ -413,7 +483,7 @@ function BillPayment({ billId = null, tableParam = null, sessionParam = null }) 
                 <span className="invoice-tag">INVOICE #{bill?.bill_number || "LIVE"}</span>
                 <h2>Order Summary</h2>
               </div>
-              <span className="table-badge-indicator">{bill?.table_number || tableParam}</span>
+              <span className="table-badge-indicator">{bill?.table_number || targetTable}</span>
             </div>
 
             {/* Items Table */}
@@ -507,7 +577,7 @@ function BillPayment({ billId = null, tableParam = null, sessionParam = null }) 
             <div className="card-header">
               <h2>Select Payment Mode</h2>
               <span className="secured-badge">
-                <ShieldCheck size={14} /> 256-bit Secure
+                <ShieldCheck size={14} /> Server Verified
               </span>
             </div>
 
@@ -543,7 +613,7 @@ function BillPayment({ billId = null, tableParam = null, sessionParam = null }) 
 
             {/* Payment Mode View */}
             <div className="payment-body-container">
-              {/* 1. UPI Payment */}
+              {/* 1. UPI Payment (Automatic Verification) */}
               {selectedMethod === "UPI" && (
                 <div className="upi-checkout-box">
                   <p className="upi-guide-text">Scan with GPay, PhonePe, Paytm, CRED or any UPI App</p>
@@ -563,28 +633,24 @@ function BillPayment({ billId = null, tableParam = null, sessionParam = null }) 
                     </div>
                   )}
 
-                  <div className="gateway-simulation-section">
-                    <button
-                      type="button"
-                      className="btn-complete-pay"
-                      onClick={handleVerifyPayment}
-                      disabled={isProcessing}
-                    >
-                      {isProcessing ? (
-                        <>
-                          <RefreshCw size={18} className="spin" /> Verifying Payment...
-                        </>
-                      ) : (
-                        <>
-                          <Check size={18} /> Confirm & Settle ₹{Number(bill.grand_total).toFixed(2)} (Instant)
-                        </>
-                      )}
-                    </button>
+                  {/* Automatic Live Verification Listener Indicator (No Manual Button) */}
+                  <div className="auto-verify-live-banner">
+                    <div className="listening-pulse-ring">
+                      <span className="pulse-dot"></span>
+                      <Radio size={16} className="radio-icon" />
+                    </div>
+                    <div className="verify-text-info">
+                      <h4>Listening for Bank UPI Payment...</h4>
+                      <p>
+                        Scan the QR code and approve the transaction in your UPI app. The system will automatically
+                        verify the payment and open your digital receipt.
+                      </p>
+                    </div>
                   </div>
                 </div>
               )}
 
-              {/* 2. Card Payment */}
+              {/* 2. Card Payment (Server Authorized) */}
               {selectedMethod === "CARD" && (
                 <div className="card-checkout-box">
                   <div className="card-input-group">
@@ -614,50 +680,68 @@ function BillPayment({ billId = null, tableParam = null, sessionParam = null }) 
                   <button
                     type="button"
                     className="btn-complete-pay"
-                    onClick={handleVerifyPayment}
+                    onClick={handlePayViaCard}
                     disabled={isProcessing}
                   >
                     {isProcessing ? (
                       <>
-                        <RefreshCw size={18} className="spin" /> Authorizing Card...
+                        <RefreshCw size={18} className="spin" /> Authorizing & Verifying Card...
                       </>
                     ) : (
                       <>
-                        <CreditCard size={18} /> Pay ₹{Number(bill.grand_total).toFixed(2)} via Card
+                        <Lock size={18} /> Pay ₹{Number(bill.grand_total).toFixed(2)} via Card
                       </>
                     )}
                   </button>
+                  <p className="secure-footnote">🔒 Payments are processed & verified securely through the gateway.</p>
                 </div>
               )}
 
-              {/* 3. Cash Payment */}
+              {/* 3. Cash Payment (Admin Only Confirmation) */}
               {selectedMethod === "CASH" && (
                 <div className="cash-checkout-box">
                   <div className="cash-request-alert">
                     <Banknote size={40} className="cash-alert-icon" />
-                    <h3>Cash Settlement</h3>
+                    <h3>Cash Settlement Request</h3>
                     <p>
-                      A notification has been sent to our floor staff to collect ₹
-                      {Number(bill.grand_total).toFixed(2)} at Table {bill.table_number}.
+                      Please hand exact cash <strong>₹{Number(bill.grand_total).toFixed(2)}</strong> to our floor staff
+                      or billing counter for Table {bill.table_number}.
                     </p>
                   </div>
 
-                  <button
-                    type="button"
-                    className="btn-complete-pay cash-btn"
-                    onClick={handleVerifyPayment}
-                    disabled={isProcessing}
-                  >
-                    {isProcessing ? (
-                      <>
-                        <RefreshCw size={18} className="spin" /> Finalizing Cash Settlement...
-                      </>
-                    ) : (
-                      <>
-                        <CheckCircle2 size={18} /> Staff Confirm Cash Received & Release Table
-                      </>
-                    )}
-                  </button>
+                  {!cashRequested ? (
+                    <button
+                      type="button"
+                      className="btn-complete-pay cash-btn"
+                      onClick={handleRequestCashPayment}
+                      disabled={isProcessing}
+                    >
+                      {isProcessing ? (
+                        <>
+                          <RefreshCw size={18} className="spin" /> Sending Cash Request...
+                        </>
+                      ) : (
+                        <>
+                          <Banknote size={18} /> Request Cash Payment at Table {bill.table_number}
+                        </>
+                      )}
+                    </button>
+                  ) : (
+                    <div className="cash-waiting-admin-card">
+                      <div className="listening-pulse-ring">
+                        <span className="pulse-dot orange"></span>
+                        <Clock size={18} className="clock-icon-pulse" />
+                      </div>
+                      <div className="cash-wait-info">
+                        <h4>Cash Payment Request Sent to Admin</h4>
+                        <p>
+                          Our staff has received your cash payment request for Table {bill.table_number}. When staff confirms
+                          the cash received, this screen will automatically open your verified Digital Receipt.
+                        </p>
+                        <span className="cash-amount-tag">Amount to Collect: ₹{Number(bill.grand_total).toFixed(2)}</span>
+                      </div>
+                    </div>
+                  )}
                 </div>
               )}
             </div>

@@ -80,9 +80,9 @@ function Waiter() {
         ]);
       }
 
-      if (event.type === "PAYMENT_COMPLETED") {
+      if (["PAYMENT_COMPLETED", "PAYMENT_VERIFIED", "CASH_PAYMENT_CONFIRMED", "BILL_PAID"].includes(event.type)) {
         setCashRequests((prev) =>
-          prev.filter((r) => r.bill?.id !== event.data?.bill?.id)
+          prev.filter((r) => r.bill?.id !== event.data?.bill?.id && r.id !== event.data?.bill?.id)
         );
         fetchFloorData();
       }

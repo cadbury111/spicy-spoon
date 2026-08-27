@@ -66,6 +66,7 @@ function Admin({ onLogout }) {
   const [staffList, setStaffList] = useState([]);
   const [restaurantSettings, setRestaurantSettings] = useState(null);
   const [restaurantQrData, setRestaurantQrData] = useState(null);
+  const [cashRequests, setCashRequests] = useState([]);
 
   // Booking Filters
   const [bookingFilter, setBookingFilter] = useState("ALL");
@@ -99,11 +100,10 @@ function Admin({ onLogout }) {
   const [tableQrCache, setTableQrCache] = useState({});
 
   // Fetch all Admin data
-  // Fetch all Admin data
   const fetchAllData = useCallback(async (isInitial = false) => {
     try {
       if (isInitial) setLoading(true);
-      const [aData, tData, oData, bData, bkData, mData, sData, stData, qrData] = await Promise.all([
+      const [aData, tData, oData, bData, bkData, mData, sData, stData, qrData, cReqs] = await Promise.all([
         api.getAnalytics().catch(() => null),
         api.getTables().catch(() => []),
         api.getOrders().catch(() => []),
@@ -113,12 +113,34 @@ function Admin({ onLogout }) {
         api.getSettings().catch(() => null),
         api.getStaffList().catch(() => []),
         api.getRestaurantQr("spicy-spoon").catch(() => null),
+        api.getCashRequests().catch(() => []),
       ]);
 
       if (aData) setAnalytics(aData);
       if (tData) setTables(tData);
       if (oData) setOrders(oData);
-      if (bData) setBills(bData);
+      if (bData) {
+        setBills(bData);
+        // Combine server cash requests with any unpaid bills marked cash
+        const activeCashBills = bData.filter((b) => b.payment_method === "CASH" && b.status !== "PAID");
+        const mergedReqs = [...(cReqs || [])];
+        for (const ac of activeCashBills) {
+          if (!mergedReqs.some((r) => r.id === ac.id || r.bill_id === ac.id)) {
+            mergedReqs.push({
+              id: ac.id,
+              bill_id: ac.id,
+              bill_number: ac.bill_number,
+              table_number: ac.table_number,
+              grand_total: ac.grand_total,
+              amount: ac.grand_total,
+              status: "CASH_PENDING",
+            });
+          }
+        }
+        setCashRequests(mergedReqs);
+      } else if (cReqs) {
+        setCashRequests(cReqs);
+      }
       if (bkData) setBookings(bkData);
       if (mData) setMenuItems(mData);
       if (sData) setRestaurantSettings(sData);
@@ -143,6 +165,35 @@ function Admin({ onLogout }) {
   const handleWsEvent = useCallback(
     (event) => {
       if (!event || !event.type) return;
+
+      if (event.type === "CASH_PAYMENT_REQUESTED") {
+        const reqData = event.data?.bill || event.data;
+        if (reqData) {
+          setCashRequests((prev) => {
+            if (prev.some((r) => r.id === reqData.id || r.bill_id === reqData.id)) return prev;
+            return [
+              {
+                id: reqData.id,
+                bill_id: reqData.id,
+                bill_number: reqData.bill_number,
+                table_number: reqData.table_number || event.data?.table?.table_number,
+                grand_total: reqData.grand_total || event.data?.amount,
+                amount: reqData.grand_total || event.data?.amount,
+                status: "CASH_PENDING",
+              },
+              ...prev,
+            ];
+          });
+        }
+      }
+
+      if (["CASH_PAYMENT_CONFIRMED", "PAYMENT_VERIFIED", "PAYMENT_COMPLETED", "BILL_PAID"].includes(event.type)) {
+        const settledBillId = event.data?.bill?.id || event.data?.id;
+        if (settledBillId) {
+          setCashRequests((prev) => prev.filter((r) => (r.bill_id || r.id) !== settledBillId));
+        }
+      }
+
       if (
         [
           "NEW_ORDER",
@@ -150,7 +201,11 @@ function Admin({ onLogout }) {
           "TABLE_STATUS_UPDATED",
           "BILL_GENERATED",
           "PAYMENT_COMPLETED",
+          "PAYMENT_VERIFIED",
+          "PAYMENT_PENDING",
           "CASH_PAYMENT_REQUESTED",
+          "CASH_PAYMENT_CONFIRMED",
+          "BILL_PAID",
           "NEW_BOOKING",
           "BOOKING_STATUS_UPDATED",
           "MENU_UPDATED",
@@ -190,7 +245,7 @@ function Admin({ onLogout }) {
     if (!billId) return;
     try {
       await api.confirmCashPayment({ bill_id: billId });
-      alert("Cash payment confirmed and table released successfully!");
+      setCashRequests((prev) => prev.filter((r) => (r.bill_id || r.id) !== billId));
       setSelectedTable(null);
       fetchAllData(false);
     } catch (err) {
@@ -390,6 +445,49 @@ function Admin({ onLogout }) {
             </button>
           </div>
         </header>
+
+        {/* REAL-TIME CASH PAYMENT REQUESTS BANNER (ADMIN ONLY CONFIRMATION) */}
+        {cashRequests && cashRequests.length > 0 && (
+          <section className="admin-cash-alerts-banner">
+            <div className="cash-alert-headline">
+              <div className="cash-alert-icon-wrap">
+                <Banknote size={24} className="alert-icon-pulse" />
+              </div>
+              <div className="headline-text">
+                <h3>🚨 Cash Payment Requests Pending Verification ({cashRequests.length})</h3>
+                <p>
+                  Customer has requested cash settlement at the table. Please collect exact cash and click <strong>"Confirm Cash Received"</strong> to settle the bill and release the table.
+                </p>
+              </div>
+            </div>
+
+            <div className="cash-requests-grid">
+              {cashRequests.map((req, idx) => (
+                <div className="cash-req-badge-card" key={req.id || req.bill_id || idx}>
+                  <div className="req-meta-left">
+                    <span className="req-table-pill">Table {req.table_number || req.bill?.table_number}</span>
+                    <span className="req-invoice-num">Invoice #{req.bill_number || req.bill?.bill_number}</span>
+                  </div>
+
+                  <div className="req-meta-center">
+                    <span className="amount-label">Amount to Collect</span>
+                    <strong className="amount-val">
+                      ₹{Number(req.grand_total || req.bill_amount || req.amount || req.bill?.grand_total || 0).toFixed(2)}
+                    </strong>
+                  </div>
+
+                  <button
+                    className="btn-admin-confirm-cash"
+                    onClick={() => handleConfirmCashPayment(req.bill_id || req.id || req.bill?.id)}
+                  >
+                    <CheckCircle2 size={18} />
+                    <span>Confirm Cash Received</span>
+                  </button>
+                </div>
+              ))}
+            </div>
+          </section>
+        )}
 
         {/* TAB 1: ANALYTICS OVERVIEW */}
         {activeTab === "overview" && (
@@ -640,7 +738,7 @@ function Admin({ onLogout }) {
                       <td>
                         {b.status !== "PAID" && (
                           <button className="btn-collect-cash" onClick={() => handleConfirmCashPayment(b.id)}>
-                            Collect Cash
+                            <Banknote size={14} /> Confirm Cash Received
                           </button>
                         )}
                         {b.status === "PAID" && <span className="settled-tag">Settled ✓</span>}
@@ -1117,7 +1215,7 @@ function Admin({ onLogout }) {
                     className="btn-collect-cash-modal"
                     onClick={() => handleConfirmCashPayment(tableDetailsBill.id)}
                   >
-                    <Banknote size={16} /> Collect Cash & Settle
+                    <Banknote size={16} /> Confirm Cash Received & Settle
                   </button>
                 )}
 

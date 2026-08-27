@@ -1206,3 +1206,185 @@
   border: none;
   cursor: pointer;
 }
+
+/* ================= REAL-TIME CASH PAYMENT REQUESTS BANNER ================= */
+.admin-cash-alerts-banner {
+  background: linear-gradient(135deg, rgba(245, 158, 11, 0.15), rgba(217, 119, 6, 0.08));
+  border: 1.5px solid rgba(245, 158, 11, 0.45);
+  border-radius: 18px;
+  padding: 18px 22px;
+  margin-bottom: 24px;
+  box-shadow: 0 8px 30px rgba(245, 158, 11, 0.12);
+  animation: slideInDown 0.3s ease-out;
+}
+
+@keyframes slideInDown {
+  from {
+    opacity: 0;
+    transform: translateY(-10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.cash-alert-headline {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  margin-bottom: 14px;
+}
+
+.cash-alert-icon-wrap {
+  width: 44px;
+  height: 44px;
+  background: rgba(245, 158, 11, 0.25);
+  border: 1px solid rgba(245, 158, 11, 0.5);
+  border-radius: 12px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #f59e0b;
+  flex-shrink: 0;
+}
+
+.alert-icon-pulse {
+  animation: pulseIcon 1.8s infinite ease-in-out;
+}
+
+@keyframes pulseIcon {
+  0%, 100% {
+    transform: scale(1);
+  }
+  50% {
+    transform: scale(1.15);
+  }
+}
+
+.headline-text h3 {
+  margin: 0 0 3px 0;
+  color: #fbbf24;
+  font-size: 1.08rem;
+  font-weight: 800;
+}
+
+.headline-text p {
+  margin: 0;
+  font-size: 0.84rem;
+  color: #e5d5ca;
+  line-height: 1.4;
+}
+
+.cash-requests-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+  gap: 12px;
+}
+
+.cash-req-badge-card {
+  background: #180e08;
+  border: 1px solid rgba(245, 158, 11, 0.3);
+  border-radius: 12px;
+  padding: 12px 16px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.req-meta-left {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.req-table-pill {
+  font-weight: 800;
+  font-size: 0.95rem;
+  color: #ffffff;
+}
+
+.req-invoice-num {
+  font-size: 0.75rem;
+  color: #a89487;
+}
+
+.req-meta-center {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+}
+
+.amount-label {
+  font-size: 0.72rem;
+  color: #a89487;
+}
+
+.amount-val {
+  font-size: 1.1rem;
+  color: #10b981;
+  font-weight: 800;
+}
+
+.btn-admin-confirm-cash {
+  background: linear-gradient(135deg, #10b981, #059669);
+  color: #ffffff;
+  border: none;
+  padding: 9px 14px;
+  border-radius: 10px;
+  font-weight: 700;
+  font-size: 0.82rem;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  box-shadow: 0 4px 14px rgba(16, 185, 129, 0.35);
+  transition: all 0.2s ease;
+  white-space: nowrap;
+}
+
+.btn-admin-confirm-cash:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 6px 18px rgba(16, 185, 129, 0.5);
+}
+
+.btn-collect-cash {
+  background: linear-gradient(135deg, #10b981, #059669);
+  color: #ffffff;
+  border: none;
+  padding: 6px 12px;
+  border-radius: 8px;
+  font-weight: 700;
+  font-size: 0.78rem;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  transition: all 0.2s ease;
+}
+
+.btn-collect-cash:hover {
+  transform: scale(1.03);
+}
+
+.btn-collect-cash-modal {
+  background: linear-gradient(135deg, #10b981, #059669);
+  color: #ffffff;
+  border: none;
+  padding: 10px 16px;
+  border-radius: 8px;
+  font-weight: 700;
+  font-size: 0.85rem;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  box-shadow: 0 4px 14px rgba(16, 185, 129, 0.35);
+  transition: all 0.2s ease;
+}
+
+.btn-collect-cash-modal:hover {
+  transform: translateY(-2px);
+}
+

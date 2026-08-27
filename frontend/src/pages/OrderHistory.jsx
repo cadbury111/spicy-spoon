@@ -28,7 +28,12 @@ function OrderHistory() {
   useWebSocket(
     useCallback(
       (event) => {
-        if (event && ["PAYMENT_COMPLETED", "ORDER_STATUS_UPDATED"].includes(event.type)) {
+        if (
+          event &&
+          ["PAYMENT_COMPLETED", "PAYMENT_VERIFIED", "CASH_PAYMENT_CONFIRMED", "BILL_PAID", "ORDER_STATUS_UPDATED"].includes(
+            event.type
+          )
+        ) {
           fetchCompletedOrders();
         }
       },

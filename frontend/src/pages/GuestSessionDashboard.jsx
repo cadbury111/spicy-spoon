@@ -66,6 +66,9 @@ function GuestSessionDashboard({ sessionId: propSessionId }) {
           "ORDER_STATUS_UPDATED",
           "BILL_GENERATED",
           "PAYMENT_COMPLETED",
+          "PAYMENT_VERIFIED",
+          "CASH_PAYMENT_CONFIRMED",
+          "BILL_PAID",
           "TABLE_STATUS_UPDATED",
         ].includes(event.type)
       ) {
