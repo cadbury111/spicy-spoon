@@ -63,60 +63,24 @@ export function getWsUrl() {
   return null;
 }
 
-// 12 Standard Tables Dataset
-const DEFAULT_TABLES = [
-  { id: 1, table_number: "T1", capacity: 2, section: "Main Hall", status: "OCCUPIED" },
+// Initial Seed Data for Demo Tables
+const INITIAL_DEMO_TABLES = [
+  { id: 1, table_number: "T1", capacity: 2, section: "Main Hall", status: "AVAILABLE" },
   { id: 2, table_number: "T2", capacity: 2, section: "Main Hall", status: "AVAILABLE" },
-  { id: 3, table_number: "T3", capacity: 4, section: "Main Hall", status: "ORDER_PLACED" },
+  { id: 3, table_number: "T3", capacity: 4, section: "Main Hall", status: "AVAILABLE" },
   { id: 4, table_number: "T4", capacity: 4, section: "Main Hall", status: "AVAILABLE" },
-  { id: 5, table_number: "T5", capacity: 2, section: "Window Side", status: "ORDER_PLACED" },
+  { id: 5, table_number: "T5", capacity: 4, section: "Window Side", status: "AVAILABLE" },
   { id: 6, table_number: "T6", capacity: 4, section: "Window Side", status: "AVAILABLE" },
-  { id: 7, table_number: "T7", capacity: 6, section: "Window Side", status: "PAYMENT_PENDING" },
-  { id: 8, table_number: "T8", capacity: 4, section: "Outdoor Patio", status: "AVAILABLE" },
-  { id: 9, table_number: "T9", capacity: 6, section: "Outdoor Patio", status: "RESERVED" },
-  { id: 10, table_number: "T10", capacity: 8, section: "Outdoor Patio", status: "AVAILABLE" },
-  { id: 11, table_number: "T11", capacity: 6, section: "VIP Lounge", status: "RESERVED" },
+  { id: 7, table_number: "T7", capacity: 6, section: "Window Side", status: "AVAILABLE" },
+  { id: 8, table_number: "T8", capacity: 6, section: "Window Side", status: "AVAILABLE" },
+  { id: 9, table_number: "T9", capacity: 4, section: "Outdoor Patio", status: "AVAILABLE" },
+  { id: 10, table_number: "T10", capacity: 6, section: "Outdoor Patio", status: "AVAILABLE" },
+  { id: 11, table_number: "T11", capacity: 8, section: "VIP Lounge", status: "AVAILABLE" },
   { id: 12, table_number: "T12", capacity: 10, section: "VIP Lounge", status: "AVAILABLE" },
 ];
 
 const INITIAL_DEMO_ORDERS = [];
-
-const INITIAL_DEMO_BOOKINGS = [
-  {
-    id: 201,
-    booking_number: "BK-829104",
-    table_id: 11,
-    table_number: "T11",
-    section: "VIP Lounge",
-    booking_date: new Date().toISOString().split("T")[0],
-    start_time: "08:00 PM",
-    end_time: "09:30 PM",
-    guest_count: 6,
-    customer_name: "Siddharth Roy",
-    customer_phone: "+91 98450 11223",
-    customer_email: "siddharth@example.com",
-    status: "CONFIRMED",
-    special_notes: "Corporate celebration, quiet booth",
-    created_at: new Date().toISOString()
-  },
-  {
-    id: 202,
-    booking_number: "BK-471092",
-    table_id: 9,
-    table_number: "T9",
-    section: "Outdoor Patio",
-    booking_date: new Date().toISOString().split("T")[0],
-    start_time: "07:30 PM",
-    end_time: "09:00 PM",
-    guest_count: 4,
-    customer_name: "Meera Nair",
-    customer_phone: "+91 97412 88990",
-    customer_email: "meera.nair@example.com",
-    status: "CHECKED_IN",
-    special_notes: "Birthday anniversary decoration requested",
-    created_at: new Date().toISOString()
-  }
-];
+const INITIAL_DEMO_BOOKINGS = [];
 
 // Helper to generate genuine scannable QR Code Data URLs
 async function generateQrDataUrl(text) {
@@ -155,10 +119,6 @@ function dispatchClientEvent(type, data = {}) {
     const payload = {
       type,
       data,
-      tables: getLocalDemoData("spicy_demo_tables", null),
-      bookings: getLocalDemoData("spicy_demo_bookings", null),
-      orders: getLocalDemoData("spicy_demo_orders", null),
-      bills: getLocalDemoData("spicy_demo_bills", null),
       senderDeviceId: getDeviceId(),
       timestamp: Date.now(),
     };
@@ -173,44 +133,6 @@ function dispatchClientEvent(type, data = {}) {
     // 3. Cross-device cloud broadcast (Phone <-> PC live sync)
     broadcastCloudEvent(payload);
   } catch (e) {}
-}
-
-let isHydrated = false;
-export async function hydrateFromCloudSync() {
-  if (isHydrated || typeof window === "undefined") return;
-  isHydrated = true;
-
-  try {
-    const res = await fetch(`https://ntfy.sh/${CLOUD_SYNC_TOPIC}/json?poll=1&since=24h`);
-    const text = await res.text();
-    const lines = text.trim().split("\n").filter(Boolean);
-
-    for (let i = lines.length - 1; i >= 0; i--) {
-      try {
-        const item = JSON.parse(lines[i]);
-        if (item.event === "message" && item.message) {
-          const payload = JSON.parse(item.message);
-          if (payload.tables && Array.isArray(payload.tables)) {
-            setLocalDemoData("spicy_demo_tables", payload.tables);
-          }
-          if (payload.bookings && Array.isArray(payload.bookings)) {
-            setLocalDemoData("spicy_demo_bookings", payload.bookings);
-          }
-          if (payload.orders && Array.isArray(payload.orders)) {
-            setLocalDemoData("spicy_demo_orders", payload.orders);
-          }
-          if (payload.bills && Array.isArray(payload.bills)) {
-            setLocalDemoData("spicy_demo_bills", payload.bills);
-          }
-          break;
-        }
-      } catch (err) {}
-    }
-  } catch (err) {}
-}
-
-if (typeof window !== "undefined") {
-  hydrateFromCloudSync();
 }
 
 function buildQueryString(params = {}) {
