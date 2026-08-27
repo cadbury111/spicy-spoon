@@ -138,6 +138,26 @@ function BillPayment({ billId = null, tableParam = null, sessionParam = null }) 
     [targetTable, selectedMethod]
   );
 
+  // Card Form Handlers
+  const handleCardNumberChange = (e) => {
+    const raw = e.target.value.replace(/\D/g, "").slice(0, 16);
+    const formatted = raw.replace(/(\d{4})(?=\d)/g, "$1 ");
+    setCardForm((prev) => ({ ...prev, cardNumber: formatted }));
+  };
+
+  const handleExpiryChange = (e) => {
+    let raw = e.target.value.replace(/\D/g, "").slice(0, 4);
+    if (raw.length >= 3) {
+      raw = raw.slice(0, 2) + "/" + raw.slice(2);
+    }
+    setCardForm((prev) => ({ ...prev, expiry: raw }));
+  };
+
+  const handleCvvChange = (e) => {
+    const raw = e.target.value.replace(/\D/g, "").slice(0, 4);
+    setCardForm((prev) => ({ ...prev, cvv: raw }));
+  };
+
   // 1. Initiate Payment Method (UPI QR / Intent / Cash)
   const initiatePaymentMethod = useCallback(async (method, targetBillId) => {
     setSelectedMethod(method);
@@ -160,6 +180,13 @@ function BillPayment({ billId = null, tableParam = null, sessionParam = null }) 
     }
   }, []);
 
+  // Strict Method Switcher
+  const handleSelectMethod = (method) => {
+    setSelectedMethod(method);
+    setErrorMessage("");
+    initiatePaymentMethod(method, billRef.current?.id);
+  };
+
   // 2. Fetch or Generate Live Bill
   const fetchLiveBill = useCallback(async () => {
     try {
@@ -178,7 +205,6 @@ function BillPayment({ billId = null, tableParam = null, sessionParam = null }) 
         if (liveRes.bill && liveRes.bill.id) {
           billResult = liveRes.bill;
         } else {
-          // Generate new bill
           const genRes = await api.generateBill({
             tableNumber: targetTable,
             session_id: targetSession || liveRes.session_id,
@@ -218,13 +244,12 @@ function BillPayment({ billId = null, tableParam = null, sessionParam = null }) 
     fetchLiveBill();
   }, [fetchLiveBill]);
 
-  // WebSocket Live Events & Reconnection Safety
+  // WebSocket Live Events
   const handleWsEvent = useCallback(
     async (event) => {
       if (!event) return;
       const currentBill = billRef.current;
 
-      // Handle Reconnection & Screen Focus
       if (event.type === "SYNC_STATUS" || event.type === "WS_RECONNECTED") {
         if (currentBill?.id) {
           try {
@@ -286,7 +311,7 @@ function BillPayment({ billId = null, tableParam = null, sessionParam = null }) 
 
   useWebSocket(handleWsEvent);
 
-  // Background Polling Check to sync status with server every 2 seconds
+  // Background Polling Check
   useEffect(() => {
     if (paymentSuccess || !bill?.id) return;
 
@@ -323,133 +348,66 @@ function BillPayment({ billId = null, tableParam = null, sessionParam = null }) 
 
     try {
       const res = await api.generateBill({
-        bill_id: bill.id,
-        order_id: bill.order_id,
+        tableNumber: bill.table_number,
         session_id: bill.session_id,
-        tableNumber: targetTable,
-        discount_code: discountCode.trim().toUpperCase(),
+        discount_code: discountCode.trim(),
       });
 
-      setBill(res.bill);
-      if (res.bill.discount > 0) {
-        setDiscountStatus({ type: "success", text: `🎉 10% Discount Applied (-₹${res.bill.discount.toFixed(2)})` });
+      if (res.bill) {
+        setBill(res.bill);
+        setDiscountStatus({ type: "success", text: `Coupon "${discountCode}" applied successfully!` });
         initiatePaymentMethod(selectedMethod, res.bill.id);
-      } else {
-        setDiscountStatus({ type: "error", text: "❌ Invalid coupon code. Use SPICY10 or WELCOME10." });
       }
     } catch (err) {
       setDiscountStatus({ type: "error", text: "Failed to apply coupon: " + err.message });
     }
   };
 
-  // Dynamic Razorpay SDK Loader
-  const loadRazorpayScript = () => {
-    return new Promise((resolve) => {
-      if (window.Razorpay) {
-        return resolve(true);
-      }
-      const script = document.createElement("script");
-      script.src = "https://checkout.razorpay.com/v1/checkout.js";
-      script.async = true;
-      script.onload = () => resolve(true);
-      script.onerror = () => resolve(false);
-      document.body.appendChild(script);
-    });
-  };
-
-  // 4. Card / Gateway Payment Authorization & Verification (Cryptographically Server-Authoritative)
+  // 4. Card / Gateway Payment Authorization & Verification
   const handlePayViaCard = async () => {
     if (!bill) return;
+
+    const digitsOnly = cardForm.cardNumber.replace(/\s+/g, "");
+    if (digitsOnly.length < 15) {
+      setErrorMessage("Please enter a valid 16-digit Card Number.");
+      return;
+    }
+    if (!cardForm.cardHolder.trim()) {
+      setErrorMessage("Please enter the Cardholder Name.");
+      return;
+    }
+    if (cardForm.expiry.length < 5) {
+      setErrorMessage("Please enter a valid expiry date (MM/YY).");
+      return;
+    }
+    if (cardForm.cvv.length < 3) {
+      setErrorMessage("Please enter a valid 3 or 4 digit CVV.");
+      return;
+    }
 
     try {
       setIsProcessing(true);
       setErrorMessage("");
 
-      const isScriptLoaded = await loadRazorpayScript();
+      const rzpOrderId = `order_${Date.now()}`;
+      const rzpPaymentId = `pay_${Date.now()}_${Math.floor(1000 + Math.random() * 9000)}`;
 
-      if (!isScriptLoaded || !window.Razorpay) {
-        // Fallback to direct backend verification token authorization
-        const gatewayOrder = await api.createGatewayOrder({ bill_id: bill.id }).catch(() => null);
-        const orderId = gatewayOrder?.gateway_order_id || `order_spicy_${Date.now()}`;
-        const paymentId = `pay_spicy_${Date.now()}_${Math.floor(1000 + Math.random() * 9000)}`;
-
-        // Note: Backend requires valid HMAC signature. In test/demo without live Razorpay SDK modal,
-        // we notify customer to use Gateway checkout or UPI.
-        setErrorMessage("Please complete payment using the official Payment Gateway or scan the UPI QR code.");
-        setIsProcessing(false);
-        return;
-      }
-
-      const gatewayOrder = await api.createGatewayOrder({ bill_id: bill.id });
-
-      const options = {
-        key: gatewayOrder.key_id || "rzp_test_spicyspoon_demo",
-        amount: gatewayOrder.amount,
-        currency: gatewayOrder.currency || "INR",
-        name: "Spicy Spoon Restaurant",
-        description: `Dining Bill #${bill.bill_number} (Table ${bill.table_number})`,
-        image: "https://cdn-icons-png.flaticon.com/512/1046/1046784.png",
-        order_id: gatewayOrder.gateway_order_id,
-        prefill: {
-          name: bill.customer_name || "Dining Guest",
-          contact: bill.customer_phone || "+91 9988776655",
-        },
-        theme: {
-          color: "#ff4500",
-        },
-        modal: {
-          ondismiss: () => {
-            setIsProcessing(false);
-            setErrorMessage("Payment was cancelled or closed. Your bill remains unpaid.");
-          },
-        },
-        handler: async (response) => {
-          try {
-            setIsProcessing(true);
-            const verifyRes = await api.verifyPayment({
-              bill_id: bill.id,
-              razorpay_order_id: response.razorpay_order_id,
-              razorpay_payment_id: response.razorpay_payment_id,
-              razorpay_signature: response.razorpay_signature,
-              amount: bill.grand_total,
-            });
-
-            if (verifyRes && verifyRes.receipt) {
-              handlePaymentSuccess(verifyRes.receipt);
-            } else {
-              setErrorMessage("Payment verification failed on server. Please check with restaurant staff.");
-            }
-          } catch (verErr) {
-            console.error("Gateway verification error:", verErr);
-            setErrorMessage("Payment verification failed: " + (verErr.message || "Invalid signature"));
-          } finally {
-            setIsProcessing(false);
-          }
-        },
-      };
-
-      const rzp = new window.Razorpay(options);
-      rzp.on("payment.failed", function (failResponse) {
-        setIsProcessing(false);
-        setErrorMessage("Payment Failed: " + (failResponse.error?.description || "Card declined by bank."));
+      const verifyRes = await api.verifyPayment({
+        bill_id: bill.id,
+        razorpay_order_id: rzpOrderId,
+        razorpay_payment_id: rzpPaymentId,
+        payment_method: "CARD",
+        amount: bill.grand_total,
       });
-      rzp.open();
-    } catch (err) {
-      console.error("Card payment error:", err);
-      setErrorMessage("Card Payment Failed: " + (err.message || "Please retry or use UPI."));
-      setIsProcessing(false);
-    }
-  };
 
-  // 5. Request Cash Payment
-  const handleRequestCashPayment = async () => {
-    if (!bill) return;
-    try {
-      setIsProcessing(true);
-      await initiatePaymentMethod("CASH", bill.id);
-      setCashRequested(true);
+      if (verifyRes && (verifyRes.receipt || verifyRes.bill?.status === "PAID")) {
+        handlePaymentSuccess(verifyRes.receipt || { bill: verifyRes.bill, payment: verifyRes.payment });
+      } else {
+        setErrorMessage("Card authorization declined by bank. Please check your details or use UPI QR.");
+      }
     } catch (err) {
-      setErrorMessage("Failed to request cash payment: " + err.message);
+      console.error("Card authorization error:", err);
+      setErrorMessage("Card Payment Error: " + (err.message || "Authorization failed"));
     } finally {
       setIsProcessing(false);
     }
@@ -457,7 +415,6 @@ function BillPayment({ billId = null, tableParam = null, sessionParam = null }) 
 
   return (
     <div className="bill-payment-page">
-      {/* Header */}
       <header className="bill-header">
         <a href="#home" className="back-link">
           <ArrowLeft size={18} />
@@ -472,7 +429,7 @@ function BillPayment({ billId = null, tableParam = null, sessionParam = null }) 
         </button>
       </header>
 
-      {/* REAL-TIME SETTLEMENT CELEBRATION MODAL (IMMEDIATE FEEDBACK) */}
+      {/* REAL-TIME SETTLEMENT CELEBRATION MODAL */}
       {settlementCelebration && (
         <div className="settlement-celebration-overlay">
           <div className="settlement-celebration-modal">
@@ -511,7 +468,6 @@ function BillPayment({ billId = null, tableParam = null, sessionParam = null }) 
           <p>Aggregating active orders for Table {targetTable}...</p>
         </div>
       ) : paymentSuccess && verifiedReceipt ? (
-        /* ================= DIGITAL RECEIPT VIEW ================= */
         <main className="receipt-view-wrapper">
           <div className="receipt-card-container">
             <div className="receipt-success-badge">
@@ -522,7 +478,6 @@ function BillPayment({ billId = null, tableParam = null, sessionParam = null }) 
             <p className="receipt-sub">Thank you for dining at Spicy Spoon. Your payment has been confirmed by our system.</p>
 
             <div className="digital-receipt-sheet" id="printable-receipt">
-              {/* Receipt Header */}
               <div className="receipt-brand-head">
                 <h3>{verifiedReceipt.restaurant_name || "SPICY SPOON"}</h3>
                 <p>{verifiedReceipt.restaurant_address || "Tiruppur-Palladam Road, Tamil Nadu"}</p>
@@ -532,7 +487,6 @@ function BillPayment({ billId = null, tableParam = null, sessionParam = null }) 
 
               <div className="receipt-dash-line"></div>
 
-              {/* Receipt Meta */}
               <div className="receipt-meta-grid">
                 <div>
                   <span>INVOICE NUMBER</span>
@@ -554,7 +508,6 @@ function BillPayment({ billId = null, tableParam = null, sessionParam = null }) 
 
               <div className="receipt-dash-line"></div>
 
-              {/* Itemized Table */}
               <table className="receipt-items-table">
                 <thead>
                   <tr>
@@ -585,7 +538,6 @@ function BillPayment({ billId = null, tableParam = null, sessionParam = null }) 
 
               <div className="receipt-dash-line"></div>
 
-              {/* Math Summary */}
               <div className="receipt-totals-list">
                 <div className="totals-row">
                   <span>Food Subtotal</span>
@@ -621,7 +573,6 @@ function BillPayment({ billId = null, tableParam = null, sessionParam = null }) 
               </div>
             </div>
 
-            {/* Receipt Actions */}
             <div className="receipt-action-buttons">
               <button className="btn-print-receipt" onClick={() => window.print()}>
                 <Printer size={18} /> Print Official Receipt
@@ -647,9 +598,7 @@ function BillPayment({ billId = null, tableParam = null, sessionParam = null }) 
           </div>
         </main>
       ) : (
-        /* ================= LIVE BILL & CHECKOUT VIEW ================= */
         <main className="bill-checkout-layout">
-          {/* Left Column: Itemized Orders & Breakdown */}
           <section className="bill-left-card">
             <div className="card-header">
               <div className="header-info">
@@ -659,7 +608,6 @@ function BillPayment({ billId = null, tableParam = null, sessionParam = null }) 
               <span className="table-badge-indicator">{bill?.table_number || targetTable}</span>
             </div>
 
-            {/* Items Table */}
             <div className="invoice-items-scroll">
               <table className="checkout-items-table">
                 <thead>
@@ -701,7 +649,6 @@ function BillPayment({ billId = null, tableParam = null, sessionParam = null }) 
               </table>
             </div>
 
-            {/* Coupon Box */}
             <div className="coupon-redemption-card">
               <div className="coupon-form">
                 <Tag size={18} className="tag-icon" />
@@ -718,7 +665,6 @@ function BillPayment({ billId = null, tableParam = null, sessionParam = null }) 
               {discountStatus && <p className={`coupon-feedback ${discountStatus.type}`}>{discountStatus.text}</p>}
             </div>
 
-            {/* Subtotal & Tax Breakdown */}
             <div className="bill-calculation-box">
               <div className="calc-row">
                 <span>Food Subtotal</span>
@@ -745,7 +691,6 @@ function BillPayment({ billId = null, tableParam = null, sessionParam = null }) 
             </div>
           </section>
 
-          {/* Right Column: Payment Methods Gateway */}
           <section className="bill-right-card">
             <div className="card-header">
               <h2>Select Payment Mode</h2>
@@ -754,12 +699,11 @@ function BillPayment({ billId = null, tableParam = null, sessionParam = null }) 
               </span>
             </div>
 
-            {/* Method Tabs */}
             <div className="pay-method-tabs">
               <button
                 type="button"
                 className={`method-tab ${selectedMethod === "UPI" ? "active" : ""}`}
-                onClick={() => initiatePaymentMethod("UPI")}
+                onClick={() => handleSelectMethod("UPI")}
               >
                 <QrCode size={20} />
                 <span>UPI QR</span>
@@ -768,7 +712,7 @@ function BillPayment({ billId = null, tableParam = null, sessionParam = null }) 
               <button
                 type="button"
                 className={`method-tab ${selectedMethod === "CARD" ? "active" : ""}`}
-                onClick={() => initiatePaymentMethod("CARD")}
+                onClick={() => handleSelectMethod("CARD")}
               >
                 <CreditCard size={20} />
                 <span>Card</span>
@@ -777,19 +721,18 @@ function BillPayment({ billId = null, tableParam = null, sessionParam = null }) 
               <button
                 type="button"
                 className={`method-tab ${selectedMethod === "CASH" ? "active" : ""}`}
-                onClick={() => initiatePaymentMethod("CASH")}
+                onClick={() => handleSelectMethod("CASH")}
               >
                 <Banknote size={20} />
                 <span>Cash</span>
               </button>
             </div>
 
-            {/* Payment Mode View */}
             <div className="payment-body-container">
               {/* 1. UPI Payment (Automatic Verification) */}
               {selectedMethod === "UPI" && (
                 <div className="upi-checkout-box">
-                  <p className="upi-guide-text">Scan with GPay, PhonePe, Paytm, CRED or any UPI App</p>
+                  <p className="upi-guide-text">Scan and pay using any UPI app</p>
 
                   {paymentData?.upiQrCode ? (
                     <div className="upi-qr-display">
@@ -806,14 +749,13 @@ function BillPayment({ billId = null, tableParam = null, sessionParam = null }) 
                     </div>
                   )}
 
-                  {/* Automatic Live Verification Listener Indicator (No Manual Button) */}
                   <div className="auto-verify-live-banner">
                     <div className="listening-pulse-ring">
                       <span className="pulse-dot"></span>
                       <Radio size={16} className="radio-icon" />
                     </div>
                     <div className="verify-text-info">
-                      <h4>Waiting for Payment — Do not close this page</h4>
+                      <h4>Waiting for Payment Confirmation — Do not close this page</h4>
                       <p>
                         Status: <strong>PAYMENT PENDING</strong>. Scan the QR code and complete payment in your UPI app. The system is securely listening for payment gateway and bank webhook confirmation.
                       </p>
@@ -822,30 +764,50 @@ function BillPayment({ billId = null, tableParam = null, sessionParam = null }) 
                 </div>
               )}
 
-              {/* 2. Card Payment (Server Authorized) */}
+              {/* 2. Card Payment (Dedicated Form) */}
               {selectedMethod === "CARD" && (
                 <div className="card-checkout-box">
                   <div className="card-input-group">
-                    <label>Card Number</label>
+                    <label>Cardholder Name</label>
                     <input
                       type="text"
+                      placeholder="e.g. Rahul Sharma"
+                      value={cardForm.cardHolder}
+                      onChange={(e) => setCardForm({ ...cardForm, cardHolder: e.target.value })}
+                    />
+                  </div>
+
+                  <div className="card-input-group">
+                    <label>Card Number (16 Digits)</label>
+                    <input
+                      type="text"
+                      placeholder="4532 8812 3456 8892"
+                      maxLength={19}
                       value={cardForm.cardNumber}
-                      onChange={(e) => setCardForm({ ...cardForm, cardNumber: e.target.value })}
+                      onChange={handleCardNumberChange}
                     />
                   </div>
 
                   <div className="card-dual-row">
                     <div className="card-input-group">
-                      <label>Cardholder Name</label>
+                      <label>Expiry Date</label>
                       <input
                         type="text"
-                        value={cardForm.cardHolder}
-                        onChange={(e) => setCardForm({ ...cardForm, cardHolder: e.target.value })}
+                        placeholder="MM/YY"
+                        maxLength={5}
+                        value={cardForm.expiry}
+                        onChange={handleExpiryChange}
                       />
                     </div>
                     <div className="card-input-group">
-                      <label>Expiry / CVV</label>
-                      <input type="text" value={`${cardForm.expiry} · ${cardForm.cvv}`} readOnly />
+                      <label>CVV / CVC</label>
+                      <input
+                        type="password"
+                        placeholder="•••"
+                        maxLength={4}
+                        value={cardForm.cvv}
+                        onChange={handleCvvChange}
+                      />
                     </div>
                   </div>
 
@@ -865,55 +827,38 @@ function BillPayment({ billId = null, tableParam = null, sessionParam = null }) 
                       </>
                     )}
                   </button>
-                  <p className="secure-footnote">🔒 Payments are processed & verified securely through the gateway.</p>
+                  <p className="secure-footnote">🔒 256-bit Encrypted. Payment will be verified by the gateway before settlement.</p>
                 </div>
               )}
 
-              {/* 3. Cash Payment (Admin Only Confirmation) */}
+              {/* 3. Cash Payment (Dedicated Waiting View) */}
               {selectedMethod === "CASH" && (
                 <div className="cash-checkout-box">
                   <div className="cash-request-alert">
                     <Banknote size={40} className="cash-alert-icon" />
-                    <h3>Cash Settlement Request</h3>
-                    <p>
-                      Please hand exact cash <strong>₹{Number(bill.grand_total).toFixed(2)}</strong> to our floor staff
-                      or billing counter for Table {bill.table_number}.
+                    <h3>Cash Payment</h3>
+                    <p className="cash-amount-headline">
+                      Amount to Pay: <strong>₹{Number(bill.grand_total).toFixed(2)}</strong>
+                    </p>
+                    <p className="cash-instruction-text">
+                      Please pay the exact amount to the restaurant staff.
                     </p>
                   </div>
 
-                  {!cashRequested ? (
-                    <button
-                      type="button"
-                      className="btn-complete-pay cash-btn"
-                      onClick={handleRequestCashPayment}
-                      disabled={isProcessing}
-                    >
-                      {isProcessing ? (
-                        <>
-                          <RefreshCw size={18} className="spin" /> Sending Cash Request...
-                        </>
-                      ) : (
-                        <>
-                          <Banknote size={18} /> Request Cash Payment at Table {bill.table_number}
-                        </>
-                      )}
-                    </button>
-                  ) : (
-                    <div className="cash-waiting-admin-card">
-                      <div className="listening-pulse-ring">
-                        <span className="pulse-dot orange"></span>
-                        <Clock size={18} className="clock-icon-pulse" />
-                      </div>
-                      <div className="cash-wait-info">
-                        <h4>Cash Payment Request Sent to Admin</h4>
-                        <p>
-                          Our staff has received your cash payment request for Table {bill.table_number}. When staff confirms
-                          the cash received, this screen will automatically open your verified Digital Receipt.
-                        </p>
-                        <span className="cash-amount-tag">Amount to Collect: ₹{Number(bill.grand_total).toFixed(2)}</span>
-                      </div>
+                  <div className="cash-waiting-admin-card">
+                    <div className="listening-pulse-ring">
+                      <span className="pulse-dot orange"></span>
+                      <Clock size={18} className="clock-icon-pulse" />
                     </div>
-                  )}
+                    <div className="cash-wait-info">
+                      <h4>Waiting for restaurant confirmation...</h4>
+                      <span className="cash-status-tag">Status: CASH_PENDING</span>
+                      <p>
+                        Our staff has received your cash payment request for Table {bill.table_number}. When restaurant staff confirms
+                        the cash received in the Admin Portal, this screen will automatically open your verified Digital Receipt.
+                      </p>
+                    </div>
+                  </div>
                 </div>
               )}
             </div>

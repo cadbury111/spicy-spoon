@@ -528,10 +528,34 @@
   color: #ffffff;
 }
 
-.cash-request-alert p {
-  margin: 0;
-  font-size: 0.85rem;
-  color: #d1b8a9;
+.cash-amount-headline {
+  font-size: 1.15rem;
+  color: #fbbf24;
+  margin: 6px 0 4px 0 !important;
+}
+
+.cash-amount-headline strong {
+  color: #ffffff;
+  font-size: 1.3rem;
+}
+
+.cash-instruction-text {
+  font-size: 0.88rem !important;
+  color: #a89487 !important;
+  margin: 0 !important;
+}
+
+.cash-status-tag {
+  display: inline-block;
+  background: rgba(245, 158, 11, 0.18);
+  border: 1px solid rgba(245, 158, 11, 0.4);
+  color: #fbbf24;
+  font-size: 0.72rem;
+  font-weight: 800;
+  letter-spacing: 1px;
+  padding: 3px 8px;
+  border-radius: 6px;
+  margin-bottom: 8px;
 }
 
 .cash-waiting-admin-card {
