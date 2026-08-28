@@ -401,7 +401,6 @@ function VisualTableBooking({ slug = "spicy-spoon" }) {
                       if (isSelected) statusClass = "selected";
                       else if (isLowCapacity) statusClass = "disabled-capacity";
                       else if (table.slotStatus === "RESERVED" || !table.isAvailableForSlot) statusClass = "reserved";
-                      else if (table.status === "OCCUPIED" || table.status === "ORDER_PLACED") statusClass = "occupied";
 
                       return (
                         <div

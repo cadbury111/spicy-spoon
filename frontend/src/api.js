@@ -248,28 +248,21 @@ async function handleClientFallback(endpoint, options = {}, originalError) {
                  b.start_time === time &&
                  b.status !== "CANCELLED"
         );
-        const hasActiveOrder = savedOrders.some(
-          (o) => (o.table_id === t.id || o.table_number === t.table_number || o.tableNumber === t.table_number || o.table_number === `T${t.table_number.replace(/^T/i, "")}`) &&
-                 o.status !== "COMPLETED" && o.status !== "PAID" && o.status !== "CANCELLED"
-        );
 
-        const isUnavailable = isBooked || hasActiveOrder || (t.status && t.status !== "AVAILABLE");
+        const isAvailableForSlot = fitsCapacity && !isBooked;
 
         return {
           ...t,
-          status: isUnavailable && t.status === "AVAILABLE" ? "BOOKED" : t.status,
+          status: isBooked ? "RESERVED" : "AVAILABLE",
+          slotStatus: isBooked ? "RESERVED" : "AVAILABLE",
           restaurant_id: 1,
-          isAvailableForSlot: fitsCapacity && !isUnavailable,
+          isAvailableForSlot,
           fitsRequestedGuests: fitsCapacity,
-          isSlotAvailable: !isUnavailable,
+          isSlotAvailable: !isBooked,
           conflictReason: !fitsCapacity
-            ? `Fits max ${t.capacity} guests`
+            ? `Capacity is ${t.capacity} (requires ${guests})`
             : isBooked
             ? "Already booked for this slot"
-            : hasActiveOrder
-            ? "Dining in progress (Active Order)"
-            : t.status !== "AVAILABLE"
-            ? `Currently ${t.status}`
             : null,
         };
       });

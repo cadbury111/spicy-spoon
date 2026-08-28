@@ -67,8 +67,8 @@ router.get("/", (req, res) => {
     }
 
     const processedTables = tables.map((t) => {
-      let slotStatus = t.status;
-      let isAvailableForSlot = t.status === "AVAILABLE";
+      let isAvailableForSlot = true;
+      let slotStatus = "AVAILABLE";
       let conflictReason = null;
 
       if (guests && t.capacity < Number(guests)) {

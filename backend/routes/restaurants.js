@@ -158,8 +158,8 @@ router.get("/:slug/tables", (req, res) => {
     }
 
     const processedTables = tables.map((t) => {
-      let slotStatus = t.status;
       let isAvailableForSlot = true;
+      let slotStatus = "AVAILABLE";
       let conflictReason = null;
 
       // Check capacity
