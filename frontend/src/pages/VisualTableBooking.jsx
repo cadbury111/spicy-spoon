@@ -40,8 +40,45 @@ const SECTIONS = [
   { name: "VIP Lounge", desc: "Exclusive plush booths for family gatherings", icon: "👑" },
 ];
 
+function getLocalDateString(d = new Date()) {
+  const year = d.getFullYear();
+  const month = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+}
+
+function timeToMinutes(timeStr) {
+  if (!timeStr) return 0;
+  const match = timeStr.trim().match(/^(\d{1,2}):(\d{2})\s*(AM|PM)$/i);
+  if (!match) return 0;
+  let hours = parseInt(match[1], 10);
+  const minutes = parseInt(match[2], 10);
+  const period = match[3].toUpperCase();
+  if (period === "PM" && hours !== 12) hours += 12;
+  if (period === "AM" && hours === 12) hours = 0;
+  return hours * 60 + minutes;
+}
+
+function calculateEndTime(startTimeStr) {
+  const startMin = timeToMinutes(startTimeStr);
+  const endMin = startMin + 90;
+  const endH = Math.floor(endMin / 60) % 24;
+  const endM = endMin % 60;
+  const period = endH >= 12 ? "PM" : "AM";
+  const displayH = endH % 12 === 0 ? 12 : endH % 12;
+  return `${String(displayH).padStart(2, "0")}:${String(endM).padStart(2, "0")} ${period}`;
+}
+
+function hasTimeOverlap(start1, end1, start2, end2) {
+  const s1 = timeToMinutes(start1);
+  const e1 = timeToMinutes(end1);
+  const s2 = timeToMinutes(start2);
+  const e2 = timeToMinutes(end2);
+  return Math.max(s1, s2) < Math.min(e1, e2);
+}
+
 function VisualTableBooking({ slug = "spicy-spoon" }) {
-  const [selectedDate, setSelectedDate] = useState(() => new Date().toISOString().split("T")[0]);
+  const [selectedDate, setSelectedDate] = useState(() => getLocalDateString());
   const [selectedTime, setSelectedTime] = useState("07:30 PM");
   const [guestCount, setGuestCount] = useState(2);
 
@@ -113,29 +150,33 @@ function VisualTableBooking({ slug = "spicy-spoon" }) {
           const bookedTableId = booking.table_id || booking.tableId;
           const bookedTableNum = booking.table_number || booking.tableNumber;
           const bookedDate = booking.booking_date || booking.bookingDate;
-          const bookedTime = booking.start_time || booking.bookingTime;
+          const bookedStart = booking.start_time || booking.bookingTime;
+          const bookedEnd = booking.end_time || booking.endTime || calculateEndTime(bookedStart);
 
-          if (bookedDate === selectedDate && (!bookedTime || bookedTime === selectedTime)) {
-            setTables((prev) =>
-              prev.map((t) => {
-                if (t.id === bookedTableId || t.table_number === bookedTableNum) {
-                  return {
-                    ...t,
-                    isAvailableForSlot: false,
-                    slotStatus: "RESERVED",
-                    conflictReason: `Reserved for ${bookedTime || selectedTime}`,
-                  };
+          if (bookedDate === selectedDate) {
+            const currentSlotEnd = calculateEndTime(selectedTime);
+            if (hasTimeOverlap(selectedTime, currentSlotEnd, bookedStart, bookedEnd)) {
+              setTables((prev) =>
+                prev.map((t) => {
+                  if (t.id === bookedTableId || t.table_number === bookedTableNum) {
+                    return {
+                      ...t,
+                      isAvailableForSlot: false,
+                      slotStatus: "RESERVED",
+                      conflictReason: `Reserved (${bookedStart} – ${bookedEnd})`,
+                    };
+                  }
+                  return t;
+                })
+              );
+
+              setSelectedTable((curr) => {
+                if (curr && (curr.id === bookedTableId || curr.table_number === bookedTableNum)) {
+                  return null;
                 }
-                return t;
-              })
-            );
-
-            setSelectedTable((curr) => {
-              if (curr && (curr.id === bookedTableId || curr.table_number === bookedTableNum)) {
-                return null;
-              }
-              return curr;
-            });
+                return curr;
+              });
+            }
           }
         }
       }
