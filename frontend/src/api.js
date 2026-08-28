@@ -459,6 +459,7 @@ async function handleClientFallback(endpoint, options = {}, originalError) {
       const targetTable = tables.find((t) => t.table_number === tableNumber) || tables[0];
 
       dispatchClientEvent("NEW_ORDER", newOrder);
+      dispatchClientEvent("ORDER_CREATED", newOrder);
       dispatchClientEvent("TABLE_STATUS_UPDATED", targetTable);
 
       return {

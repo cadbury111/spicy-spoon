@@ -198,8 +198,10 @@ function Admin({ onLogout }) {
       if (
         [
           "NEW_ORDER",
+          "ORDER_CREATED",
           "ORDER_STATUS_UPDATED",
           "TABLE_STATUS_UPDATED",
+          "TABLE_BOOKED",
           "BILL_GENERATED",
           "PAYMENT_COMPLETED",
           "PAYMENT_VERIFIED",

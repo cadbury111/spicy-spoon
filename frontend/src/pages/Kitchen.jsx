@@ -58,7 +58,7 @@ function Kitchen({ onLogout }) {
   const handleWsEvent = useCallback(
     (event) => {
       if (!event || !event.type) return;
-      if (["NEW_ORDER", "ORDER_STATUS_UPDATED", "ORDER_DELETED"].includes(event.type)) {
+      if (["NEW_ORDER", "ORDER_CREATED", "ORDER_STATUS_UPDATED", "ORDER_DELETED"].includes(event.type)) {
         fetchKitchenOrders(false);
       }
     },

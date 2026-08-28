@@ -32,18 +32,37 @@ router.get("/", (req, res) => {
     let queryStr = `
       SELECT 
         t.*,
-        b.booking_number,
-        b.customer_name as booking_customer,
-        b.start_time as booking_start,
-        b.end_time as booking_end,
-        b.guest_count as booking_guests,
-        o.order_number,
-        o.customer_name as order_customer,
-        o.status as order_status,
-        o.total as order_total
+        COALESCE(act_b.id, b.id) as resolved_booking_id,
+        COALESCE(act_b.booking_number, b.booking_number) as booking_number,
+        COALESCE(act_b.customer_name, b.customer_name) as booking_customer,
+        COALESCE(act_b.start_time, b.start_time) as booking_start,
+        COALESCE(act_b.end_time, b.end_time) as booking_end,
+        COALESCE(act_b.guest_count, b.guest_count) as booking_guests,
+        COALESCE(act_o.id, o.id) as resolved_order_id,
+        COALESCE(act_o.order_number, o.order_number) as order_number,
+        COALESCE(act_o.customer_name, o.customer_name) as order_customer,
+        COALESCE(act_o.status, o.status) as order_status,
+        COALESCE(act_o.total, o.total) as order_total,
+        COALESCE(act_o.session_id, t.current_session_id) as resolved_session_id
       FROM restaurant_tables t
       LEFT JOIN bookings b ON t.current_booking_id = b.id
       LEFT JOIN orders o ON t.current_order_id = o.id
+      LEFT JOIN (
+        SELECT b1.* FROM bookings b1
+        JOIN (
+          SELECT table_id, MAX(id) as max_id FROM bookings
+          WHERE status IN ('CONFIRMED', 'CHECKED_IN', 'PENDING')
+          GROUP BY table_id
+        ) latest_b ON b1.id = latest_b.max_id
+      ) act_b ON t.id = act_b.table_id
+      LEFT JOIN (
+        SELECT o1.* FROM orders o1
+        JOIN (
+          SELECT table_id, MAX(id) as max_id FROM orders
+          WHERE status NOT IN ('COMPLETED', 'CANCELLED', 'PAID')
+          GROUP BY table_id
+        ) latest_o ON o1.id = latest_o.max_id
+      ) act_o ON t.id = act_o.table_id
       WHERE 1=1
     `;
     const params = [];
@@ -66,16 +85,40 @@ router.get("/", (req, res) => {
       requestedEndTime = `${String(displayH).padStart(2, "0")}:${String(endM).padStart(2, "0")} ${period}`;
     }
 
+    const todayStr = new Date().toISOString().split("T")[0];
+
     const processedTables = tables.map((t) => {
       let isAvailableForSlot = true;
       let slotStatus = "AVAILABLE";
       let conflictReason = null;
 
+      // Determine live floor status for Admin / Floor Map
+      let liveStatus = "AVAILABLE";
+      let liveOrderNumber = null;
+      let liveBookingCustomer = null;
+
+      // 1. If table has an active dining order in progress (PLACED / ACCEPTED / COOKING / READY / SERVED)
+      if (t.order_status && !["COMPLETED", "CANCELLED", "PAID"].includes(t.order_status)) {
+        liveStatus = t.order_status === "ORDER_PLACED" ? "ORDER_PLACED" : "OCCUPIED";
+        liveOrderNumber = t.order_number;
+      } else if (t.status === "PAYMENT_PENDING") {
+        liveStatus = "PAYMENT_PENDING";
+        liveOrderNumber = t.order_number;
+      } else if (t.booking_number && (!date || t.booking_date === todayStr)) {
+        // 2. If table is reserved for today
+        liveStatus = "RESERVED";
+        liveBookingCustomer = t.booking_customer;
+      } else if (t.status && t.status !== "AVAILABLE" && t.status !== "COMPLETED") {
+        liveStatus = t.status;
+      }
+
+      // Check slot capacity
       if (guests && t.capacity < Number(guests)) {
         isAvailableForSlot = false;
         conflictReason = `Capacity is ${t.capacity} (requires ${guests})`;
       }
 
+      // Check time overlap on target date for reservation booking
       if (date && time && requestedEndTime) {
         const bookingsForTable = db.prepare(`
           SELECT * FROM bookings
@@ -96,6 +139,9 @@ router.get("/", (req, res) => {
 
       return {
         ...t,
+        status: liveStatus,
+        order_number: liveOrderNumber,
+        booking_customer: liveBookingCustomer,
         slotStatus,
         isAvailableForSlot,
         conflictReason,

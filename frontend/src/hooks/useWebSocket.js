@@ -69,7 +69,7 @@ function mergeIncomingPayloadIntoLocalStorage(payload) {
 
   // 1. Single order object in payload.data (NEW_ORDER or ORDER_STATUS_UPDATED)
   if (
-    (payload.type === "NEW_ORDER" || payload.type === "ORDER_STATUS_UPDATED") &&
+    (payload.type === "NEW_ORDER" || payload.type === "ORDER_CREATED" || payload.type === "ORDER_STATUS_UPDATED") &&
     payload.data
   ) {
     const singleOrder = payload.data.order || payload.data;
