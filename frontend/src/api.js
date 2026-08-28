@@ -470,10 +470,11 @@ async function handleClientFallback(endpoint, options = {}, originalError) {
       };
     }
 
-    if (method === "PUT" && endpoint.includes("/status")) {
-      const match = endpoint.match(/\/orders\/(\d+)\/status/);
+    if (method === "PUT" && (endpoint.includes("/status") || endpoint.match(/\/orders\/\d+/))) {
+      const match = endpoint.match(/\/orders\/(\d+)/);
       const orderId = match ? parseInt(match[1], 10) : 0;
-      const status = body.status || "ACCEPTED";
+      let status = (body.status || "ACCEPTED").toUpperCase();
+      if (status === "COOKING" || status === "PREP") status = "PREPARING";
 
       orders = orders.map((o) => (o.id === orderId ? { ...o, status, updated_at: new Date().toISOString() } : o));
       setLocalDemoData("spicy_demo_orders", orders);

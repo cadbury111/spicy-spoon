@@ -332,6 +332,17 @@ const handleUpdateOrderStatus = (req, res) => {
     const orderId = Number(req.params.id);
     const { status } = req.body;
 
+    if (!status) {
+      return res.status(400).json({ message: "Status is required" });
+    }
+
+    let canonicalStatus = String(status).trim().toUpperCase();
+    if (canonicalStatus === "PENDING") canonicalStatus = "ORDER_PLACED";
+    if (canonicalStatus === "COOKING" || canonicalStatus === "PREP") canonicalStatus = "PREPARING";
+    if (canonicalStatus === "SERVE") canonicalStatus = "SERVED";
+    if (canonicalStatus === "ACCEPT") canonicalStatus = "ACCEPTED";
+    if (canonicalStatus === "COMPLETE") canonicalStatus = "COMPLETED";
+
     const validStatuses = [
       "ORDER_PLACED",
       "ACCEPTED",
@@ -340,14 +351,9 @@ const handleUpdateOrderStatus = (req, res) => {
       "SERVED",
       "COMPLETED",
       "CANCELLED",
-      // backward aliases
-      "pending",
-      "preparing",
-      "ready",
-      "completed",
     ];
 
-    if (!validStatuses.includes(status)) {
+    if (!validStatuses.includes(canonicalStatus)) {
       return res.status(400).json({ message: `Invalid status: ${status}` });
     }
 
@@ -355,12 +361,6 @@ const handleUpdateOrderStatus = (req, res) => {
     if (!order) {
       return res.status(404).json({ message: "Order not found" });
     }
-
-    let canonicalStatus = status.toUpperCase();
-    if (status === "pending") canonicalStatus = "ORDER_PLACED";
-    if (status === "preparing") canonicalStatus = "PREPARING";
-    if (status === "ready") canonicalStatus = "READY";
-    if (status === "completed") canonicalStatus = "COMPLETED";
 
     db.prepare(`
       UPDATE orders
