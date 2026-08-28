@@ -182,6 +182,10 @@ function CustomerMenu() {
     fetchMenu();
     fetchTables();
     fetchActiveOrders();
+    const interval = setInterval(() => {
+      fetchActiveOrders();
+    }, 4000);
+    return () => clearInterval(interval);
   }, [fetchMenu, fetchTables, fetchActiveOrders]);
 
   // WebSocket live updates
@@ -192,7 +196,14 @@ function CustomerMenu() {
       if (
         [
           "NEW_ORDER",
+          "ORDER_CREATED",
           "ORDER_STATUS_UPDATED",
+          "ORDER_UPDATED",
+          "ORDER_ACCEPTED",
+          "ORDER_COOKING",
+          "ORDER_READY",
+          "ORDER_SERVED",
+          "ORDER_COMPLETED",
           "BILL_GENERATED",
           "PAYMENT_SUCCESS",
           "PAYMENT_COMPLETED",
