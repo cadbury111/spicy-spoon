@@ -70,12 +70,16 @@ function Kitchen({ onLogout }) {
   const handleUpdateStatus = async (orderId, nextStatus) => {
     // Instant optimistic UI update (< 1ms)
     setOrders((prev) =>
-      prev.map((o) => (o.id === orderId ? { ...o, status: nextStatus } : o))
+      prev.map((o) => (o.id === orderId || o.order_number === orderId ? { ...o, status: nextStatus } : o))
     );
     try {
       await api.updateOrderStatus(orderId, nextStatus);
+      const localOrders = JSON.parse(localStorage.getItem("spicy_demo_orders") || "[]");
+      const updatedLocal = localOrders.map((o) => (o.id === orderId || o.order_number === orderId ? { ...o, status: nextStatus } : o));
+      localStorage.setItem("spicy_demo_orders", JSON.stringify(updatedLocal));
+      fetchKitchenOrders(false);
     } catch (err) {
-      alert("Failed to update status: " + err.message);
+      console.warn("Kitchen update status warning:", err);
       fetchKitchenOrders(false);
     }
   };

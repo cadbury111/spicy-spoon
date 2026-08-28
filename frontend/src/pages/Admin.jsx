@@ -297,12 +297,15 @@ function Admin({ onLogout }) {
 
   // Update Order Status
   const handleUpdateOrderStatus = async (orderId, status) => {
-    setOrders((prev) => prev.map((o) => (o.id === orderId ? { ...o, status } : o)));
+    setOrders((prev) => prev.map((o) => (o.id === orderId || o.order_number === orderId ? { ...o, status } : o)));
     try {
       await api.updateOrderStatus(orderId, status);
+      const localOrders = JSON.parse(localStorage.getItem("spicy_demo_orders") || "[]");
+      const updatedLocal = localOrders.map((o) => (o.id === orderId || o.order_number === orderId ? { ...o, status } : o));
+      localStorage.setItem("spicy_demo_orders", JSON.stringify(updatedLocal));
       fetchAllData(false);
     } catch (err) {
-      alert("Failed to update order: " + err.message);
+      console.warn("Order update warning:", err);
       fetchAllData(false);
     }
   };

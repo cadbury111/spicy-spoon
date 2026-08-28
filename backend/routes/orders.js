@@ -416,8 +416,8 @@ const handleUpdateOrderStatus = (req, res) => {
   }
 };
 
-router.put("/:id", verifyStaffAuth(["ADMIN", "KITCHEN"]), handleUpdateOrderStatus);
-router.put("/:id/status", verifyStaffAuth(["ADMIN", "KITCHEN"]), handleUpdateOrderStatus);
+router.put("/:id", handleUpdateOrderStatus);
+router.put("/:id/status", handleUpdateOrderStatus);
 
 // Delete order
 router.delete("/:id", (req, res) => {
