@@ -63,21 +63,58 @@ function connectGlobalWs() {
   }
 }
 
+const ORDER_STATUS_RANK = {
+  ORDER_PLACED: 1,
+  ACCEPTED: 2,
+  PREPARING: 3,
+  READY: 4,
+  SERVED: 5,
+  COMPLETED: 6,
+  CANCELLED: 7,
+};
+
+function getStatusRank(status) {
+  if (!status) return 0;
+  const s = String(status).toUpperCase();
+  if (s === "COOKING" || s === "PREP") return ORDER_STATUS_RANK.PREPARING;
+  return ORDER_STATUS_RANK[s] || 0;
+}
+
 function mergeIncomingPayloadIntoLocalStorage(payload) {
   if (!payload) return false;
   let updated = false;
 
-  // 1. Single order object in payload.data (NEW_ORDER or ORDER_STATUS_UPDATED)
+  // 1. Single order object in payload.data (NEW_ORDER, ORDER_STATUS_UPDATED, ORDER_COOKING, ORDER_READY, ORDER_SERVED, ORDER_COMPLETED)
   if (
-    (payload.type === "NEW_ORDER" || payload.type === "ORDER_CREATED" || payload.type === "ORDER_STATUS_UPDATED") &&
+    (payload.type === "NEW_ORDER" ||
+      payload.type === "ORDER_CREATED" ||
+      payload.type === "ORDER_STATUS_UPDATED" ||
+      payload.type === "ORDER_UPDATED" ||
+      payload.type === "ORDER_ACCEPTED" ||
+      payload.type === "ORDER_COOKING" ||
+      payload.type === "ORDER_READY" ||
+      payload.type === "ORDER_SERVED" ||
+      payload.type === "ORDER_COMPLETED") &&
     payload.data
   ) {
     const singleOrder = payload.data.order || payload.data;
     if (singleOrder && (singleOrder.id || singleOrder.order_number)) {
       const existingOrders = JSON.parse(localStorage.getItem("spicy_demo_orders") || "[]");
       const key = String(singleOrder.id || singleOrder.order_number);
-      const filtered = existingOrders.filter((o) => String(o.id || o.order_number) !== key);
-      const merged = [singleOrder, ...filtered];
+      const existing = existingOrders.find((o) => String(o.id) === key || String(o.order_number) === key);
+
+      let finalOrder = singleOrder;
+      if (existing) {
+        const existingRank = getStatusRank(existing.status);
+        const incomingRank = getStatusRank(singleOrder.status);
+        // Do not downgrade a more advanced status with an older incoming event
+        if (existingRank > incomingRank) {
+          finalOrder = { ...singleOrder, status: existing.status };
+        }
+      }
+
+      const filtered = existingOrders.filter((o) => String(o.id) !== key && String(o.order_number) !== key);
+      const merged = [finalOrder, ...filtered];
       localStorage.setItem("spicy_demo_orders", JSON.stringify(merged));
       updated = true;
     }
@@ -88,7 +125,15 @@ function mergeIncomingPayloadIntoLocalStorage(payload) {
     const existingOrders = JSON.parse(localStorage.getItem("spicy_demo_orders") || "[]");
     const map = new Map();
     existingOrders.forEach((o) => map.set(String(o.id || o.order_number), o));
-    payload.orders.forEach((o) => map.set(String(o.id || o.order_number), o));
+    payload.orders.forEach((incoming) => {
+      const k = String(incoming.id || incoming.order_number);
+      const existing = map.get(k);
+      if (existing && getStatusRank(existing.status) > getStatusRank(incoming.status)) {
+        map.set(k, { ...incoming, status: existing.status });
+      } else {
+        map.set(k, incoming);
+      }
+    });
     const merged = Array.from(map.values()).sort((a, b) => (b.id || 0) - (a.id || 0));
     localStorage.setItem("spicy_demo_orders", JSON.stringify(merged));
     updated = true;

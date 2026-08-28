@@ -470,16 +470,22 @@ async function handleClientFallback(endpoint, options = {}, originalError) {
       };
     }
 
-    if (method === "PUT" && (endpoint.includes("/status") || endpoint.match(/\/orders\/\d+/))) {
-      const match = endpoint.match(/\/orders\/(\d+)/);
-      const orderId = match ? parseInt(match[1], 10) : 0;
+    if (method === "PUT" && (endpoint.includes("/status") || endpoint.match(/\/orders\//))) {
+      const match = endpoint.match(/\/orders\/([^/]+)/);
+      const rawId = match ? match[1] : "";
+      const orderIdNum = parseInt(rawId, 10);
       let status = (body.status || "ACCEPTED").toUpperCase();
       if (status === "COOKING" || status === "PREP") status = "PREPARING";
 
-      orders = orders.map((o) => (o.id === orderId ? { ...o, status, updated_at: new Date().toISOString() } : o));
+      orders = orders.map((o) => {
+        if (o.id === orderIdNum || String(o.id) === rawId || String(o.order_number) === rawId) {
+          return { ...o, status, updated_at: new Date().toISOString() };
+        }
+        return o;
+      });
       setLocalDemoData("spicy_demo_orders", orders);
 
-      const updated = orders.find((o) => o.id === orderId);
+      const updated = orders.find((o) => o.id === orderIdNum || String(o.id) === rawId || String(o.order_number) === rawId);
       dispatchClientEvent("ORDER_STATUS_UPDATED", updated);
       return { message: "Order status updated", order: updated };
     }
