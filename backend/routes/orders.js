@@ -385,7 +385,7 @@ const handleUpdateOrderStatus = (req, res) => {
           `).run(order.table_id);
         }
       }
-    } else if (["ORDER_PLACED", "ACCEPTED", "PREPARING", "READY"].includes(canonicalStatus)) {
+    } else if (["ORDER_PLACED", "ACCEPTED", "PREPARING", "READY", "SERVED"].includes(canonicalStatus)) {
       db.prepare("UPDATE restaurant_tables SET status = 'OCCUPIED' WHERE id = ? AND status = 'AVAILABLE'").run(order.table_id);
     }
 
@@ -400,7 +400,10 @@ const handleUpdateOrderStatus = (req, res) => {
     };
 
     broadcast("ORDER_STATUS_UPDATED", fullOrder);
+    broadcast("ORDER_UPDATED", fullOrder);
     if (canonicalStatus === "ACCEPTED") broadcast("ORDER_ACCEPTED", fullOrder);
+    if (canonicalStatus === "PREPARING") broadcast("ORDER_COOKING", fullOrder);
+    if (canonicalStatus === "READY") broadcast("ORDER_READY", fullOrder);
     if (canonicalStatus === "SERVED") broadcast("ORDER_SERVED", fullOrder);
     if (canonicalStatus === "COMPLETED") broadcast("ORDER_COMPLETED", fullOrder);
     broadcast("TABLE_STATUS_UPDATED", updatedTable);
