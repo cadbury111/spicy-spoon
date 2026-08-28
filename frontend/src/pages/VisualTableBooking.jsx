@@ -104,11 +104,46 @@ function VisualTableBooking({ slug = "spicy-spoon" }) {
   // WebSocket Live Updates
   const handleWsEvent = useCallback(
     (event) => {
-      if (event && event.type) {
-        fetchAvailability(false);
+      if (!event || !event.type) return;
+
+      // Instant optimistic update when any client books a table
+      if (event.type === "TABLE_BOOKED" || event.type === "NEW_BOOKING") {
+        const booking = event.data?.booking || event.data;
+        if (booking) {
+          const bookedTableId = booking.table_id || booking.tableId;
+          const bookedTableNum = booking.table_number || booking.tableNumber;
+          const bookedDate = booking.booking_date || booking.bookingDate;
+          const bookedTime = booking.start_time || booking.bookingTime;
+
+          if (bookedDate === selectedDate && (!bookedTime || bookedTime === selectedTime)) {
+            setTables((prev) =>
+              prev.map((t) => {
+                if (t.id === bookedTableId || t.table_number === bookedTableNum) {
+                  return {
+                    ...t,
+                    isAvailableForSlot: false,
+                    slotStatus: "RESERVED",
+                    conflictReason: `Reserved for ${bookedTime || selectedTime}`,
+                  };
+                }
+                return t;
+              })
+            );
+
+            setSelectedTable((curr) => {
+              if (curr && (curr.id === bookedTableId || curr.table_number === bookedTableNum)) {
+                return null;
+              }
+              return curr;
+            });
+          }
+        }
       }
+
+      // Re-fetch authoritative backend availability
+      fetchAvailability(false);
     },
-    [fetchAvailability]
+    [fetchAvailability, selectedDate, selectedTime]
   );
 
   useWebSocket(handleWsEvent);
@@ -189,7 +224,10 @@ function VisualTableBooking({ slug = "spicy-spoon" }) {
       }
     } catch (err) {
       console.error("Booking error:", err);
-      setErrorMessage(err.message || "Failed to confirm table booking. Please choose another table.");
+      const msg = err.data?.message || err.message || "Failed to confirm table booking. Please choose another table.";
+      setErrorMessage(msg);
+      setSelectedTable(null);
+      fetchAvailability(false);
     } finally {
       setIsSubmitting(false);
     }

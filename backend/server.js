@@ -44,18 +44,25 @@ app.get("/", (req, res) => {
 });
 
 // API Routes
-app.use("/api/auth", authRouter);
-app.use("/api/sessions", sessionsRouter);
-app.use("/api/restaurants", restaurantsRouter);
-app.use("/api/tables", tablesRouter);
-app.use("/api/bookings", bookingsRouter);
-app.use("/api/menu", menuRouter);
-app.use("/api/orders", ordersRouter);
-app.use("/api/bills", billsRouter);
-app.use("/api/payments", paymentsRouter);
-app.use("/api/qr", qrRouter);
-app.use("/api/reports", reportsRouter);
-app.use("/api/settings", settingsRouter);
+const routers = [
+  { path: "/auth", router: authRouter },
+  { path: "/sessions", router: sessionsRouter },
+  { path: "/restaurants", router: restaurantsRouter },
+  { path: "/tables", router: tablesRouter },
+  { path: "/bookings", router: bookingsRouter },
+  { path: "/menu", router: menuRouter },
+  { path: "/orders", router: ordersRouter },
+  { path: "/bills", router: billsRouter },
+  { path: "/payments", router: paymentsRouter },
+  { path: "/qr", router: qrRouter },
+  { path: "/reports", router: reportsRouter },
+  { path: "/settings", router: settingsRouter },
+];
+
+routers.forEach(({ path, router }) => {
+  app.use(`/api${path}`, router);
+  app.use(path, router);
+});
 
 // Error Handling Middleware
 app.use((err, req, res, next) => {

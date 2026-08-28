@@ -29,14 +29,32 @@ function initWebSocket(server) {
   return wss;
 }
 
+const CLOUD_SYNC_TOPIC = "spicy_spoon_cloud_sync_prod_v2";
+
 function broadcast(eventType, payload) {
-  if (!wss) return;
   const message = JSON.stringify({ type: eventType, data: payload, timestamp: new Date().toISOString() });
-  wss.clients.forEach((client) => {
-    if (client.readyState === WebSocket.OPEN) {
-      client.send(message);
-    }
-  });
+
+  // 1. Direct WebSocket broadcast to local connected clients
+  if (wss) {
+    wss.clients.forEach((client) => {
+      if (client.readyState === WebSocket.OPEN) {
+        client.send(message);
+      }
+    });
+  }
+
+  // 2. Cloud broadcast across all PC and mobile browsers
+  try {
+    fetch(`https://ntfy.sh/${CLOUD_SYNC_TOPIC}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        type: eventType,
+        data: payload,
+        timestamp: Date.now(),
+      }),
+    }).catch(() => {});
+  } catch (err) {}
 }
 
 module.exports = { initWebSocket, broadcast };

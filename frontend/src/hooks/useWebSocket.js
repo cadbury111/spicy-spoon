@@ -112,11 +112,30 @@ function mergeIncomingPayloadIntoLocalStorage(payload) {
   if (payload.bookings && Array.isArray(payload.bookings) && payload.bookings.length > 0) {
     localStorage.setItem("spicy_demo_bookings", JSON.stringify(payload.bookings));
     updated = true;
-  } else if (payload.type === "NEW_BOOKING" && payload.data && payload.data.id) {
-    const existingBookings = JSON.parse(localStorage.getItem("spicy_demo_bookings") || "[]");
-    const filtered = existingBookings.filter((b) => b.id !== payload.data.id);
-    localStorage.setItem("spicy_demo_bookings", JSON.stringify([payload.data, ...filtered]));
-    updated = true;
+  } else if ((payload.type === "NEW_BOOKING" || payload.type === "TABLE_BOOKED") && payload.data) {
+    const bookingData = payload.data.booking || payload.data;
+    const bId = bookingData.id || bookingData.bookingId;
+    if (bId) {
+      const existingBookings = JSON.parse(localStorage.getItem("spicy_demo_bookings") || "[]");
+      const filtered = existingBookings.filter((b) => b.id !== bId);
+      const normalizedBooking = {
+        id: bId,
+        booking_number: bookingData.booking_number || bookingData.bookingNumber || `BK-${bId}`,
+        table_id: bookingData.table_id || bookingData.tableId,
+        table_number: bookingData.table_number || bookingData.tableNumber,
+        section: bookingData.section || "",
+        booking_date: bookingData.booking_date || bookingData.bookingDate,
+        start_time: bookingData.start_time || bookingData.bookingTime,
+        end_time: bookingData.end_time || bookingData.endTime || "09:00 PM",
+        guest_count: bookingData.guest_count || bookingData.guestCount || 2,
+        customer_name: bookingData.customer_name || bookingData.customerName || "Guest Diner",
+        status: bookingData.status || bookingData.bookingStatus || "CONFIRMED",
+        special_notes: bookingData.special_notes || "",
+        created_at: bookingData.created_at || new Date().toISOString(),
+      };
+      localStorage.setItem("spicy_demo_bookings", JSON.stringify([normalizedBooking, ...filtered]));
+      updated = true;
+    }
   }
 
   // 5. Bills

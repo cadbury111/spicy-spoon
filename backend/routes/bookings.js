@@ -324,6 +324,18 @@ router.post("/", (req, res) => {
 
     const updatedTable = db.prepare("SELECT * FROM restaurant_tables WHERE id = ?").get(targetTable.id);
 
+    broadcast("TABLE_BOOKED", {
+      tableId: targetTable.id,
+      tableNumber: targetTable.table_number,
+      bookingId: createdBooking.id,
+      bookingNumber: createdBooking.booking_number,
+      bookingDate: createdBooking.booking_date,
+      bookingTime: createdBooking.start_time,
+      endTime: createdBooking.end_time,
+      guestCount: createdBooking.guest_count,
+      bookingStatus: createdBooking.status,
+      booking: createdBooking,
+    });
     broadcast("NEW_BOOKING", createdBooking);
     broadcast("TABLE_STATUS_UPDATED", updatedTable);
 

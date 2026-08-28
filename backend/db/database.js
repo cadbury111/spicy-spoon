@@ -4,11 +4,24 @@ const fs = require("fs");
 const bcrypt = require("bcryptjs");
 
 const dbDir = path.join(__dirname);
-if (!fs.existsSync(dbDir)) {
-  fs.mkdirSync(dbDir, { recursive: true });
+let dbPath;
+
+const isServerless = Boolean(process.env.VERCEL || process.env.AWS_LAMBDA_FUNCTION_NAME);
+if (isServerless) {
+  dbPath = path.join("/tmp", "restaurant.db");
+  const bundledDbPath = path.join(dbDir, "restaurant.db");
+  if (fs.existsSync(bundledDbPath) && !fs.existsSync(dbPath)) {
+    try {
+      fs.copyFileSync(bundledDbPath, dbPath);
+    } catch (e) {}
+  }
+} else {
+  if (!fs.existsSync(dbDir)) {
+    fs.mkdirSync(dbDir, { recursive: true });
+  }
+  dbPath = path.join(dbDir, "restaurant.db");
 }
 
-const dbPath = path.join(dbDir, "restaurant.db");
 const db = new DatabaseSync(dbPath);
 
 // Enable foreign keys

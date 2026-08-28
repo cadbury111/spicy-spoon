@@ -38,12 +38,13 @@ function resolveApiBaseUrl() {
     if (/^(\d{1,3}\.){3}\d{1,3}$/.test(hostname)) {
       return `${protocol}//${hostname}:5000/api`;
     }
+    // For Vercel production or any domain, use same-origin relative API path "/api"
+    return "/api";
   }
-  return null;
+  return "/api";
 }
 
 const API_BASE_URL = resolveApiBaseUrl();
-const IS_HOSTED_MODE = !API_BASE_URL;
 
 export function getWsUrl() {
   if (import.meta.env.VITE_WS_URL) {
@@ -72,7 +73,7 @@ export function getWsUrl() {
 }
 
 // Initial Seed Data for Demo Tables
-const INITIAL_DEMO_TABLES = [
+export const INITIAL_DEMO_TABLES = [
   { id: 1, table_number: "T1", capacity: 2, section: "Main Hall", status: "AVAILABLE" },
   { id: 2, table_number: "T2", capacity: 2, section: "Main Hall", status: "AVAILABLE" },
   { id: 3, table_number: "T3", capacity: 4, section: "Main Hall", status: "AVAILABLE" },
@@ -87,8 +88,9 @@ const INITIAL_DEMO_TABLES = [
   { id: 12, table_number: "T12", capacity: 10, section: "VIP Lounge", status: "AVAILABLE" },
 ];
 
-const INITIAL_DEMO_ORDERS = [];
-const INITIAL_DEMO_BOOKINGS = [];
+export const DEFAULT_TABLES = INITIAL_DEMO_TABLES;
+export const INITIAL_DEMO_ORDERS = [];
+export const INITIAL_DEMO_BOOKINGS = [];
 
 // Helper to generate genuine scannable QR Code Data URLs
 async function generateQrDataUrl(text) {
@@ -162,11 +164,6 @@ function buildQueryString(params = {}) {
 }
 
 async function request(endpoint, options = {}) {
-  // If hosted on Vercel/cloud without a local/custom backend URL, run instant client engine in 0ms!
-  if (IS_HOSTED_MODE) {
-    return handleClientFallback(endpoint, options);
-  }
-
   const url = `${API_BASE_URL}${endpoint}`;
   const token = localStorage.getItem("spicy_staff_token");
 
@@ -196,6 +193,11 @@ async function request(endpoint, options = {}) {
       localStorage.removeItem("spicy_staff_user");
     }
 
+    const contentType = response.headers.get("content-type") || "";
+    if (!contentType.includes("application/json")) {
+      throw new Error(`Server returned non-JSON response (${response.status})`);
+    }
+
     const data = await response.json().catch(() => ({}));
 
     if (!response.ok) {
@@ -222,7 +224,8 @@ async function handleClientFallback(endpoint, options = {}, originalError) {
   // Initialize base tables in local store if not present
   let tables = getLocalDemoData("spicy_demo_tables", null);
   if (!tables || !Array.isArray(tables) || tables.length === 0) {
-    tables = DEFAULT_TABLES.map((t) => ({ ...t, current_booking_id: null, current_order_id: null, current_session_id: null }));
+    const seedTables = INITIAL_DEMO_TABLES || DEFAULT_TABLES || [];
+    tables = seedTables.map((t) => ({ ...t, current_booking_id: null, current_order_id: null, current_session_id: null }));
     setLocalDemoData("spicy_demo_tables", tables);
   }
 
@@ -297,6 +300,22 @@ async function handleClientFallback(endpoint, options = {}, originalError) {
     if (method === "POST") {
       const tableId = body.table_id || 1;
       const table = tables.find((t) => t.id === tableId || t.table_number === body.table_number) || tables[0];
+
+      // Atomic double-booking concurrency check:
+      const hasOverlap = bookings.some(
+        (b) =>
+          (b.table_id === table.id || b.table_number === table.table_number) &&
+          b.booking_date === body.booking_date &&
+          b.start_time === body.start_time &&
+          b.status !== "CANCELLED"
+      );
+
+      if (hasOverlap) {
+        const error = new Error(`Sorry, Table ${table.table_number} was just reserved for ${body.start_time}. Please select another table.`);
+        error.status = 409;
+        throw error;
+      }
+
       const ref = `BK-${Date.now().toString().slice(-6)}`;
 
       const newBooking = {
@@ -327,6 +346,20 @@ async function handleClientFallback(endpoint, options = {}, originalError) {
         setLocalDemoData("spicy_demo_tables", tables);
       }
 
+      const tableBookedPayload = {
+        tableId: table.id,
+        tableNumber: table.table_number,
+        bookingId: newBooking.id,
+        bookingNumber: newBooking.booking_number,
+        bookingDate: newBooking.booking_date,
+        bookingTime: newBooking.start_time,
+        endTime: newBooking.end_time,
+        guestCount: newBooking.guest_count,
+        bookingStatus: newBooking.status,
+        booking: newBooking,
+      };
+
+      dispatchClientEvent("TABLE_BOOKED", tableBookedPayload);
       dispatchClientEvent("NEW_BOOKING", newBooking);
       dispatchClientEvent("TABLE_STATUS_UPDATED", table);
 
