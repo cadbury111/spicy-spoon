@@ -58,6 +58,9 @@ router.get("/", (req, res) => {
       queryStr += " AND o.status = ?";
       params.push(status);
     }
+    if (req.query.include_archived !== "true") {
+      queryStr += " AND COALESCE(o.is_archived, 0) = 0";
+    }
 
     queryStr += " ORDER BY o.id DESC";
 
@@ -94,7 +97,7 @@ router.get("/active", (req, res) => {
       SELECT o.*, COALESCE(o.table_number, t.table_number) as resolved_table_number, t.section as table_section
       FROM orders o
       LEFT JOIN restaurant_tables t ON o.table_id = t.id
-      WHERE o.status NOT IN ('CANCELLED', 'COMPLETED')
+      WHERE o.status NOT IN ('CANCELLED', 'COMPLETED') AND COALESCE(o.is_archived, 0) = 0
     `;
     const params = [];
 
@@ -406,6 +409,7 @@ const handleUpdateOrderStatus = (req, res) => {
     if (canonicalStatus === "READY") broadcast("ORDER_READY", fullOrder);
     if (canonicalStatus === "SERVED") broadcast("ORDER_SERVED", fullOrder);
     if (canonicalStatus === "COMPLETED") broadcast("ORDER_COMPLETED", fullOrder);
+    if (canonicalStatus === "CANCELLED") broadcast("ORDER_CANCELLED", fullOrder);
     broadcast("TABLE_STATUS_UPDATED", updatedTable);
 
     res.json({
@@ -419,11 +423,7 @@ const handleUpdateOrderStatus = (req, res) => {
   }
 };
 
-router.put("/:id", handleUpdateOrderStatus);
-router.put("/:id/status", handleUpdateOrderStatus);
-
-// Delete order
-router.delete("/:id", (req, res) => {
+router.put("/:id/cancel", verifyStaffAuth(["ADMIN"]), (req, res) => {
   try {
     const orderId = Number(req.params.id);
     const order = db.prepare("SELECT * FROM orders WHERE id = ? OR order_number = ?").get(orderId || 0, req.params.id);
@@ -432,21 +432,147 @@ router.delete("/:id", (req, res) => {
       return res.status(404).json({ message: "Order not found" });
     }
 
-    db.prepare("DELETE FROM order_items WHERE order_id = ?").run(order.id);
-    db.prepare("DELETE FROM orders WHERE id = ?").run(order.id);
+    // Cancellation is allowed for appropriate pre-completion states: ORDER_PLACED, ACCEPTED
+    // Restricted once order is SERVED, COMPLETED, or if linked bill is PAID
+    const cancellableStatuses = ["ORDER_PLACED", "ACCEPTED"];
+    if (!cancellableStatuses.includes(order.status)) {
+      return res.status(400).json({ message: "This order can no longer be cancelled." });
+    }
 
-    const activeRemaining = db.prepare("SELECT COUNT(*) as count FROM orders WHERE table_id = ? AND status NOT IN ('COMPLETED', 'CANCELLED')").get(order.table_id).count;
-    if (activeRemaining === 0) {
-      db.prepare("UPDATE restaurant_tables SET status = 'AVAILABLE', current_order_id = NULL, current_session_id = NULL WHERE id = ?").run(order.table_id);
+    // Check if linked bill has already been paid
+    const paidBill = db.prepare("SELECT * FROM bills WHERE (order_id = ? OR session_id = ?) AND status = 'PAID'").get(order.id, order.session_id);
+    if (paidBill) {
+      return res.status(400).json({ message: "This order can no longer be cancelled." });
+    }
+
+    // Update order status to CANCELLED
+    db.prepare(`
+      UPDATE orders
+      SET status = 'CANCELLED', updated_at = CURRENT_TIMESTAMP
+      WHERE id = ?
+    `).run(order.id);
+
+    // Sync Table status
+    const remainingActiveOrders = db.prepare(`
+      SELECT COUNT(*) as count FROM orders
+      WHERE table_id = ? AND status NOT IN ('COMPLETED', 'CANCELLED') AND COALESCE(is_archived, 0) = 0
+    `).get(order.table_id).count;
+
+    if (remainingActiveOrders === 0) {
+      const activeBill = db.prepare("SELECT * FROM bills WHERE (session_id = ? OR order_id = ?) AND status != 'PAID'").get(order.session_id, order.id);
+      if (!activeBill) {
+        db.prepare(`
+          UPDATE restaurant_tables
+          SET status = 'AVAILABLE', current_order_id = NULL, current_session_id = NULL
+          WHERE id = ?
+        `).run(order.table_id);
+      }
+    }
+
+    const updatedOrder = db.prepare("SELECT * FROM orders WHERE id = ?").get(order.id);
+    const items = db.prepare("SELECT * FROM order_items WHERE order_id = ?").all(order.id);
+    const updatedTable = db.prepare("SELECT * FROM restaurant_tables WHERE id = ?").get(order.table_id);
+
+    const fullOrder = {
+      ...updatedOrder,
+      items,
+      tableNumber: updatedOrder.table_number,
+    };
+
+    broadcast("ORDER_CANCELLED", fullOrder);
+    broadcast("ORDER_STATUS_UPDATED", fullOrder);
+    broadcast("ORDER_UPDATED", fullOrder);
+    broadcast("TABLE_STATUS_UPDATED", updatedTable);
+
+    res.json({
+      message: `Order #${order.order_number} cancelled successfully`,
+      order: fullOrder,
+      table: updatedTable,
+    });
+  } catch (error) {
+    console.error("Order cancellation error:", error);
+    res.status(500).json({ message: "Failed to cancel order", error: error.message });
+  }
+});
+
+router.put("/:id", handleUpdateOrderStatus);
+router.put("/:id/status", handleUpdateOrderStatus);
+
+// Admin-only Delete / Archive Completed Order
+router.delete("/:id", verifyStaffAuth(["ADMIN"]), (req, res) => {
+  try {
+    const orderId = Number(req.params.id);
+    const order = db.prepare("SELECT * FROM orders WHERE id = ? OR order_number = ?").get(orderId || 0, req.params.id);
+
+    if (!order) {
+      return res.status(404).json({ message: "Order not found" });
+    }
+
+    // Verify order is actually completed/closed according to the existing lifecycle
+    const eligibleDeleteStatuses = ["COMPLETED", "CANCELLED"];
+    if (!eligibleDeleteStatuses.includes(order.status)) {
+      return res.status(400).json({
+        message: "Active orders cannot be deleted. Cancel the order first if placed accidentally.",
+      });
+    }
+
+    // Safety: Verify order is not currently part of an unpaid live bill
+    const unpaidBill = db.prepare(`
+      SELECT * FROM bills
+      WHERE (order_id = ? OR session_id = ?) AND status != 'PAID'
+    `).get(order.id, order.session_id);
+
+    if (unpaidBill && order.status !== "CANCELLED") {
+      return res.status(400).json({
+        message: "Cannot delete order associated with an unpaid bill.",
+      });
+    }
+
+    // Safety: Check if table session is actively open with pending payment for this order
+    const table = db.prepare("SELECT * FROM restaurant_tables WHERE id = ?").get(order.table_id);
+    if (table && table.current_order_id === order.id && table.status === "PAYMENT_PENDING") {
+      return res.status(400).json({
+        message: "Cannot delete order while table payment is pending.",
+      });
+    }
+
+    // Safe Archiving: Set is_archived = 1 (preserves bill history, payment history, and revenue reporting)
+    db.prepare(`
+      UPDATE orders
+      SET is_archived = 1, updated_at = CURRENT_TIMESTAMP
+      WHERE id = ?
+    `).run(order.id);
+
+    // If table current_order_id pointed to this order, clear it if no other active orders remain
+    if (table && table.current_order_id === order.id) {
+      const activeRemaining = db.prepare(`
+        SELECT COUNT(*) as count FROM orders
+        WHERE table_id = ? AND status NOT IN ('COMPLETED', 'CANCELLED') AND COALESCE(is_archived, 0) = 0
+      `).get(order.table_id).count;
+
+      if (activeRemaining === 0) {
+        db.prepare(`
+          UPDATE restaurant_tables
+          SET current_order_id = NULL
+          WHERE id = ?
+        `).run(order.table_id);
+      }
     }
 
     const updatedTable = db.prepare("SELECT * FROM restaurant_tables WHERE id = ?").get(order.table_id);
 
-    broadcast("ORDER_DELETED", { id: order.id });
+    broadcast("ORDER_REMOVED", { id: order.id, order_number: order.order_number });
+    broadcast("ORDER_ARCHIVED", { id: order.id, order_number: order.order_number });
+    broadcast("ORDER_DELETED", { id: order.id, order_number: order.order_number });
     broadcast("TABLE_STATUS_UPDATED", updatedTable);
 
-    res.json({ message: "Order deleted successfully", order });
+    res.json({
+      message: "Order deleted from operational list successfully",
+      id: order.id,
+      order_number: order.order_number,
+    });
   } catch (error) {
+    console.error("Order deletion error:", error);
     res.status(500).json({ message: "Failed to delete order", error: error.message });
   }
 });

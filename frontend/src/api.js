@@ -164,11 +164,30 @@ function buildQueryString(params = {}) {
 }
 
 async function request(endpoint, options = {}) {
-  const url = `${API_BASE_URL}${endpoint}`;
+  const isBookingRelated =
+    endpoint.startsWith("/bookings") ||
+    endpoint.includes("/tables") ||
+    endpoint.startsWith("/tables");
+
+  let url = `${API_BASE_URL}${endpoint}`;
+  const method = (options.method || "GET").toUpperCase();
+
+  // Cache-busting timestamp parameter for availability and table queries
+  if (isBookingRelated && method === "GET") {
+    const separator = url.includes("?") ? "&" : "?";
+    url = `${url}${separator}_t=${Date.now()}`;
+  }
+
   const token = localStorage.getItem("spicy_staff_token");
 
   const headers = {
     "Content-Type": "application/json",
+    ...(isBookingRelated
+      ? {
+          "Cache-Control": "no-cache, no-store, must-revalidate",
+          Pragma: "no-cache",
+        }
+      : {}),
     ...options.headers,
   };
 
@@ -211,6 +230,10 @@ async function request(endpoint, options = {}) {
   } catch (netOrHttpErr) {
     if (netOrHttpErr.status) {
       throw netOrHttpErr;
+    }
+    // Prevent client fallback from storing bookings in localStorage if running against a backend
+    if (endpoint.startsWith("/bookings") && method === "POST") {
+      throw new Error(netOrHttpErr.message || "Failed to reach booking server. Please check your connection.");
     }
     return handleClientFallback(endpoint, options, netOrHttpErr);
   }
@@ -470,6 +493,25 @@ async function handleClientFallback(endpoint, options = {}, originalError) {
       };
     }
 
+    if (method === "PUT" && endpoint.includes("/cancel")) {
+      const match = endpoint.match(/\/orders\/([^/]+)\/cancel/);
+      const rawId = match ? match[1] : "";
+      const orderIdNum = parseInt(rawId, 10);
+
+      orders = orders.map((o) => {
+        if (o.id === orderIdNum || String(o.id) === rawId || String(o.order_number) === rawId) {
+          return { ...o, status: "CANCELLED", updated_at: new Date().toISOString() };
+        }
+        return o;
+      });
+      setLocalDemoData("spicy_demo_orders", orders);
+
+      const updated = orders.find((o) => o.id === orderIdNum || String(o.id) === rawId || String(o.order_number) === rawId);
+      dispatchClientEvent("ORDER_CANCELLED", updated);
+      dispatchClientEvent("ORDER_STATUS_UPDATED", updated);
+      return { message: "Order cancelled successfully", order: updated };
+    }
+
     if (method === "PUT" && (endpoint.includes("/status") || endpoint.match(/\/orders\//))) {
       const match = endpoint.match(/\/orders\/([^/]+)/);
       const rawId = match ? match[1] : "";
@@ -495,8 +537,10 @@ async function handleClientFallback(endpoint, options = {}, originalError) {
       const orderId = match ? parseInt(match[1], 10) : 0;
       orders = orders.filter((o) => o.id !== orderId);
       setLocalDemoData("spicy_demo_orders", orders);
+      dispatchClientEvent("ORDER_REMOVED", { id: orderId });
+      dispatchClientEvent("ORDER_ARCHIVED", { id: orderId });
       dispatchClientEvent("ORDER_DELETED", { id: orderId });
-      return { message: "Order deleted" };
+      return { message: "Order deleted successfully" };
     }
   }
 
@@ -1123,6 +1167,7 @@ export const api = {
   },
   createOrder: (data) => request("/orders", { method: "POST", body: data }),
   updateOrderStatus: (id, status) => request(`/orders/${id}/status`, { method: "PUT", body: { status } }),
+  cancelOrder: (id) => request(`/orders/${id}/cancel`, { method: "PUT" }),
   deleteOrder: (id) => request(`/orders/${id}`, { method: "DELETE" }),
 
   // Bills & Live Billing

@@ -3,17 +3,20 @@
   "version": "1.0.0",
   "main": "server.js",
   "scripts": {
-    "start": "node server.js"
+    "start": "node server.js",
+    "db:setup": "node db/setup-db.js"
   },
   "keywords": [],
   "author": "",
   "license": "ISC",
   "description": "Spicy Spoon Backend",
   "dependencies": {
+    "@libsql/client": "^0.18.0",
     "bcryptjs": "^3.0.3",
     "cors": "^2.8.6",
     "express": "^5.2.1",
     "jsonwebtoken": "^9.0.3",
+    "pg": "^8.23.0",
     "qrcode": "^1.5.4",
     "ws": "^8.21.3"
   }

@@ -21,6 +21,23 @@ function timeToMinutes(timeStr) {
   return hours * 60 + minutes;
 }
 
+function calculateEndTime(startTimeStr) {
+  const startMin = timeToMinutes(startTimeStr);
+  const endMin = startMin + 90;
+  const endH = Math.floor(endMin / 60) % 24;
+  const endM = endMin % 60;
+  const period = endH >= 12 ? "PM" : "AM";
+  const displayH = endH % 12 === 0 ? 12 : endH % 12;
+  return `${String(displayH).padStart(2, "0")}:${String(endM).padStart(2, "0")} ${period}`;
+}
+
+function determineMealType(timeStr) {
+  const mins = timeToMinutes(timeStr);
+  if (mins >= 360 && mins <= 690) return "BREAKFAST"; // 06:00 AM - 11:30 AM
+  if (mins > 690 && mins < 1020) return "LUNCH";     // 11:31 AM - 04:59 PM
+  return "DINNER";                                   // 05:00 PM onwards
+}
+
 function hasTimeOverlap(start1, end1, start2, end2) {
   const s1 = timeToMinutes(start1);
   const e1 = timeToMinutes(end1);
@@ -29,9 +46,20 @@ function hasTimeOverlap(start1, end1, start2, end2) {
   return Math.max(s1, s2) < Math.min(e1, e2);
 }
 
-// Get all bookings with table details
-router.get("/", (req, res) => {
+// Middleware to prevent stale HTTP caching on booking endpoints
+function setNoCacheHeaders(res) {
+  res.set({
+    "Cache-Control": "no-store, no-cache, must-revalidate, proxy-revalidate, max-age=0",
+    "Pragma": "no-cache",
+    "Expires": "0",
+    "Surrogate-Control": "no-store",
+  });
+}
+
+// 1. Get all bookings with table details
+router.get("/", async (req, res) => {
   try {
+    setNoCacheHeaders(res);
     const { date, status, table_id } = req.query;
     let queryStr = `
       SELECT 
@@ -60,7 +88,7 @@ router.get("/", (req, res) => {
 
     queryStr += " ORDER BY b.booking_date DESC, b.start_time ASC, b.id DESC";
 
-    const bookings = db.prepare(queryStr).all(...params);
+    const bookings = await db.query(queryStr, params);
     res.json(bookings);
   } catch (error) {
     console.error("Error fetching bookings:", error);
@@ -68,23 +96,22 @@ router.get("/", (req, res) => {
   }
 });
 
-// Check real-time availability for slot
-router.get("/availability/check", (req, res) => {
+// 2. Check real-time availability for slot
+router.get("/availability/check", async (req, res) => {
   try {
+    setNoCacheHeaders(res);
     const { date, time, guests } = req.query;
     if (!date || !time) {
       return res.status(400).json({ message: "date and time are required" });
     }
 
-    const startMin = timeToMinutes(time);
-    const endMin = startMin + 90;
-    const endH = Math.floor(endMin / 60) % 24;
-    const endM = endMin % 60;
-    const period = endH >= 12 ? "PM" : "AM";
-    const displayH = endH % 12 === 0 ? 12 : endH % 12;
-    const calculatedEndTime = `${String(displayH).padStart(2, "0")}:${String(endM).padStart(2, "0")} ${period}`;
-
-    const tables = db.prepare("SELECT * FROM restaurant_tables ORDER BY id ASC").all();
+    const calculatedEndTime = calculateEndTime(time);
+    const tables = await db.query("SELECT * FROM restaurant_tables ORDER BY id ASC");
+    const bookings = await db.query(`
+      SELECT * FROM bookings
+      WHERE booking_date = ?
+        AND status IN ('CONFIRMED', 'CHECKED_IN', 'PENDING')
+    `, [date]);
 
     const results = tables.map((table) => {
       let isAvailable = true;
@@ -96,14 +123,8 @@ router.get("/availability/check", (req, res) => {
       }
 
       if (isAvailable) {
-        const bookings = db.prepare(`
-          SELECT * FROM bookings
-          WHERE table_id = ?
-            AND booking_date = ?
-            AND status IN ('CONFIRMED', 'CHECKED_IN', 'PENDING')
-        `).all(table.id, date);
-
-        for (const bk of bookings) {
+        const tableBookings = bookings.filter((b) => b.table_id === table.id);
+        for (const bk of tableBookings) {
           if (hasTimeOverlap(time, calculatedEndTime, bk.start_time, bk.end_time)) {
             isAvailable = false;
             reason = `Booked from ${bk.start_time} to ${bk.end_time}`;
@@ -133,10 +154,11 @@ router.get("/availability/check", (req, res) => {
   }
 });
 
-// Get single booking
-router.get("/:id", (req, res) => {
+// 3. Get single booking
+router.get("/:id", async (req, res) => {
   try {
-    const booking = db.prepare(`
+    setNoCacheHeaders(res);
+    const booking = await db.queryOne(`
       SELECT 
         b.*,
         t.table_number,
@@ -145,7 +167,7 @@ router.get("/:id", (req, res) => {
       FROM bookings b
       JOIN restaurant_tables t ON b.table_id = t.id
       WHERE b.id = ? OR b.booking_number = ?
-    `).get(Number(req.params.id) || 0, req.params.id);
+    `, [Number(req.params.id) || 0, req.params.id]);
 
     if (!booking) {
       return res.status(404).json({ message: "Booking not found" });
@@ -156,9 +178,8 @@ router.get("/:id", (req, res) => {
   }
 });
 
-// Create new booking with ATOMIC SQLite Concurrency & Double-Booking Protection
-router.post("/", (req, res) => {
-  let transactionActive = false;
+// 4. Create new booking with ATOMIC Concurrency & Database-Level Double-Booking Protection
+router.post("/", async (req, res) => {
   try {
     const {
       table_id,
@@ -173,165 +194,158 @@ router.post("/", (req, res) => {
       special_notes = "",
     } = req.body;
 
-    if (!customer_name || !customer_phone || !booking_date || !start_time || !guest_count) {
-      return res.status(400).json({
-        message: "Missing required fields (customer_name, customer_phone, booking_date, start_time, guest_count)",
-      });
+    // Server-side input validation
+    if (!customer_name || !String(customer_name).trim()) {
+      return res.status(400).json({ success: false, message: "Customer name is required" });
+    }
+    if (!customer_phone || !String(customer_phone).trim()) {
+      return res.status(400).json({ success: false, message: "Customer phone is required" });
+    }
+    if (!booking_date || !/^\d{4}-\d{2}-\d{2}$/.test(booking_date)) {
+      return res.status(400).json({ success: false, message: "Valid booking date (YYYY-MM-DD) is required" });
+    }
+    if (!start_time || !timeToMinutes(start_time)) {
+      return res.status(400).json({ success: false, message: "Valid start time is required" });
+    }
+    if (!guest_count || Number(guest_count) < 1) {
+      return res.status(400).json({ success: false, message: "Guest count must be at least 1" });
     }
 
-    // Calculate default end time if missing (90 mins)
-    let calculatedEndTime = end_time;
-    if (!calculatedEndTime) {
-      const startMin = timeToMinutes(start_time);
-      const endMin = startMin + 90;
-      const endH = Math.floor(endMin / 60) % 24;
-      const endM = endMin % 60;
-      const period = endH >= 12 ? "PM" : "AM";
-      const displayH = endH % 12 === 0 ? 12 : endH % 12;
-      calculatedEndTime = `${String(displayH).padStart(2, "0")}:${String(endM).padStart(2, "0")} ${period}`;
-    }
-
-    // 1. BEGIN IMMEDIATE ATOMIC TRANSACTION
-    db.exec("BEGIN IMMEDIATE;");
-    transactionActive = true;
-
-    let targetTable;
+    const calculatedEndTime = end_time || calculateEndTime(start_time);
+    const mealType = determineMealType(start_time);
     const searchTableKey = table_id || table_number;
 
-    if (searchTableKey) {
-      targetTable = db.prepare("SELECT * FROM restaurant_tables WHERE id = ? OR table_number = ?").get(
-        Number(searchTableKey) || 0,
-        String(searchTableKey)
-      );
+    // Atomic Database Transaction
+    const { createdBooking, updatedTable } = await db.transaction(async (trx) => {
+      let targetTable;
 
-      if (!targetTable) {
-        db.exec("ROLLBACK;");
-        transactionActive = false;
-        return res.status(404).json({ message: `Selected table ${searchTableKey} does not exist.` });
-      }
+      if (searchTableKey) {
+        targetTable = await trx.queryOne(
+          "SELECT * FROM restaurant_tables WHERE id = ? OR table_number = ?",
+          [Number(searchTableKey) || 0, String(searchTableKey)]
+        );
 
-      // Capacity verification
-      if (targetTable.capacity < Number(guest_count)) {
-        db.exec("ROLLBACK;");
-        transactionActive = false;
-        return res.status(400).json({
-          message: `Selected Table ${targetTable.table_number} has a capacity of ${targetTable.capacity} guests (you requested ${guest_count}). Please select a larger table.`,
-        });
-      }
-    } else {
-      // Auto-assign table that fits capacity and has no overlap
-      const candidates = db.prepare(`
-        SELECT * FROM restaurant_tables
-        WHERE capacity >= ?
-        ORDER BY capacity ASC, id ASC
-      `).all(Number(guest_count));
+        if (!targetTable) {
+          const err = new Error(`Selected table ${searchTableKey} does not exist.`);
+          err.statusCode = 404;
+          throw err;
+        }
 
-      for (const cand of candidates) {
-        const overlaps = db.prepare(`
-          SELECT * FROM bookings
-          WHERE table_id = ?
-            AND booking_date = ?
-            AND status IN ('CONFIRMED', 'CHECKED_IN', 'PENDING')
-        `).all(cand.id, booking_date);
+        // Capacity check
+        if (targetTable.capacity < Number(guest_count)) {
+          const err = new Error(
+            `Selected Table ${targetTable.table_number} has a capacity of ${targetTable.capacity} guests (you requested ${guest_count}). Please select a larger table.`
+          );
+          err.statusCode = 400;
+          throw err;
+        }
+      } else {
+        // Auto-assign table that fits capacity and has no overlap
+        const candidates = await trx.query(
+          "SELECT * FROM restaurant_tables WHERE capacity >= ? ORDER BY capacity ASC, id ASC",
+          [Number(guest_count)]
+        );
 
-        let conflict = false;
-        for (const eb of overlaps) {
-          if (hasTimeOverlap(start_time, calculatedEndTime, eb.start_time, eb.end_time)) {
-            conflict = true;
+        for (const cand of candidates) {
+          const overlaps = await trx.query(
+            "SELECT * FROM bookings WHERE table_id = ? AND booking_date = ? AND status IN ('CONFIRMED', 'CHECKED_IN', 'PENDING')",
+            [cand.id, booking_date]
+          );
+
+          const conflict = overlaps.some((eb) =>
+            hasTimeOverlap(start_time, calculatedEndTime, eb.start_time, eb.end_time)
+          );
+
+          if (!conflict) {
+            targetTable = cand;
             break;
           }
         }
 
-        if (!conflict) {
-          targetTable = cand;
-          break;
+        if (!targetTable) {
+          const err = new Error(
+            "No tables available for the selected date, time, and guest count. Please choose another time slot."
+          );
+          err.statusCode = 409;
+          throw err;
         }
       }
 
-      if (!targetTable) {
-        db.exec("ROLLBACK;");
-        transactionActive = false;
-        return res.status(409).json({
-          message: "No tables available for the selected date, time, and guest count. Please choose another time slot.",
-        });
+      // Strict Overlap Check on target table & date within the transaction
+      const existingBookings = await trx.query(
+        "SELECT * FROM bookings WHERE table_id = ? AND booking_date = ? AND status IN ('CONFIRMED', 'CHECKED_IN', 'PENDING')",
+        [targetTable.id, booking_date]
+      );
+
+      for (const eb of existingBookings) {
+        if (hasTimeOverlap(start_time, calculatedEndTime, eb.start_time, eb.end_time)) {
+          const err = new Error(
+            `Sorry, Table ${targetTable.table_number} was just booked by another guest for ${eb.start_time} – ${eb.end_time}. Please select another table.`
+          );
+          err.statusCode = 409;
+          err.conflictingBooking = eb;
+          throw err;
+        }
       }
-    }
 
-    // 2. Strict Overlap Check within the transaction
-    const existingBookings = db.prepare(`
-      SELECT * FROM bookings
-      WHERE table_id = ?
-        AND booking_date = ?
-        AND status IN ('CONFIRMED', 'CHECKED_IN', 'PENDING')
-    `).all(targetTable.id, booking_date);
+      // Insert Booking into Centralized Database
+      const bookingNumber = generateBookingNumber();
+      const insertResult = await trx.execute(`
+        INSERT INTO bookings (
+          booking_number, restaurant_id, table_id, customer_name, customer_phone, customer_email,
+          booking_date, start_time, end_time, meal_type, guest_count, status, special_notes
+        )
+        VALUES (?, 1, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'CONFIRMED', ?)
+      `, [
+        bookingNumber,
+        targetTable.id,
+        String(customer_name).trim(),
+        String(customer_phone).trim(),
+        String(customer_email || "").trim(),
+        booking_date,
+        start_time,
+        calculatedEndTime,
+        mealType,
+        Number(guest_count),
+        special_notes || "",
+      ]);
 
-    for (const eb of existingBookings) {
-      if (hasTimeOverlap(start_time, calculatedEndTime, eb.start_time, eb.end_time)) {
-        db.exec("ROLLBACK;");
-        transactionActive = false;
-        return res.status(409).json({
-          message: `Sorry, Table ${targetTable.table_number} was just booked by another guest for ${eb.start_time} – ${eb.end_time}. Please select another table.`,
-          conflictingBooking: eb,
-        });
+      const newBookingId = insertResult.lastInsertRowid;
+
+      // Link booking to table if date is today
+      const todayStr = new Date().toISOString().split("T")[0];
+      if (booking_date === todayStr) {
+        await trx.execute(
+          "UPDATE restaurant_tables SET status = 'RESERVED', current_booking_id = ? WHERE id = ?",
+          [newBookingId, targetTable.id]
+        );
       }
-    }
 
-    // 3. Insert Booking
-    const bookingNumber = generateBookingNumber();
-    const insertBooking = db.prepare(`
-      INSERT INTO bookings (
-        booking_number, restaurant_id, table_id, customer_name, customer_phone, customer_email,
-        booking_date, start_time, end_time, guest_count, status, special_notes
-      )
-      VALUES (?, 1, ?, ?, ?, ?, ?, ?, ?, ?, 'CONFIRMED', ?)
-    `);
+      const booked = await trx.queryOne(`
+        SELECT b.*, t.table_number, t.capacity, t.section
+        FROM bookings b
+        JOIN restaurant_tables t ON b.table_id = t.id
+        WHERE b.id = ?
+      `, [newBookingId]);
 
-    const result = insertBooking.run(
-      bookingNumber,
-      targetTable.id,
-      customer_name.trim(),
-      customer_phone.trim(),
-      customer_email.trim(),
-      booking_date,
-      start_time,
-      calculatedEndTime,
-      Number(guest_count),
-      special_notes
-    );
+      const tableState = await trx.queryOne(
+        "SELECT * FROM restaurant_tables WHERE id = ?",
+        [targetTable.id]
+      );
 
-    const newBookingId = result.lastInsertRowid;
+      return { createdBooking: booked, updatedTable: tableState };
+    });
 
-    // Link booking to table if date is today
-    const todayStr = new Date().toISOString().split("T")[0];
-    if (booking_date === todayStr) {
-      db.prepare(`
-        UPDATE restaurant_tables
-        SET status = 'RESERVED', current_booking_id = ?
-        WHERE id = ?
-      `).run(newBookingId, targetTable.id);
-    }
-
-    // 4. COMMIT TRANSACTION
-    db.exec("COMMIT;");
-    transactionActive = false;
-
-    const createdBooking = db.prepare(`
-      SELECT b.*, t.table_number, t.capacity, t.section
-      FROM bookings b
-      JOIN restaurant_tables t ON b.table_id = t.id
-      WHERE b.id = ?
-    `).get(newBookingId);
-
-    const updatedTable = db.prepare("SELECT * FROM restaurant_tables WHERE id = ?").get(targetTable.id);
-
+    // Real-time broadcast to all connected devices and browsers
     broadcast("TABLE_BOOKED", {
-      tableId: targetTable.id,
-      tableNumber: targetTable.table_number,
+      tableId: updatedTable.id,
+      tableNumber: updatedTable.table_number,
       bookingId: createdBooking.id,
       bookingNumber: createdBooking.booking_number,
       bookingDate: createdBooking.booking_date,
       bookingTime: createdBooking.start_time,
       endTime: createdBooking.end_time,
+      mealType: createdBooking.meal_type || mealType,
       guestCount: createdBooking.guest_count,
       bookingStatus: createdBooking.status,
       booking: createdBooking,
@@ -340,23 +354,44 @@ router.post("/", (req, res) => {
     broadcast("TABLE_STATUS_UPDATED", updatedTable);
 
     res.status(201).json({
-      message: `Table ${targetTable.table_number} reserved successfully!`,
+      success: true,
+      message: `Table ${updatedTable.table_number} reserved successfully!`,
       booking: createdBooking,
       table: updatedTable,
     });
   } catch (error) {
-    if (transactionActive) {
-      try {
-        db.exec("ROLLBACK;");
-      } catch (e) {}
+    // Database-level uniqueness collision protection (e.g. concurrent duplicate insert)
+    const isConstraintViolation =
+      (error.message && (
+        error.message.includes("UNIQUE constraint failed") ||
+        error.message.includes("idx_unique_active_booking") ||
+        error.message.includes("duplicate key value")
+      )) ||
+      error.code === "23505" ||
+      error.code === "SQLITE_CONSTRAINT";
+
+    if (isConstraintViolation) {
+      return res.status(409).json({
+        success: false,
+        message: "This table has already been booked for this slot. Please select another table.",
+      });
     }
+
+    if (error.statusCode) {
+      return res.status(error.statusCode).json({
+        success: false,
+        message: error.message,
+        conflictingBooking: error.conflictingBooking || null,
+      });
+    }
+
     console.error("Booking transaction error:", error);
-    res.status(500).json({ message: "Failed to create booking", error: error.message });
+    res.status(500).json({ success: false, message: "Failed to create booking", error: error.message });
   }
 });
 
-// Update booking status (ADMIN ONLY)
-router.put("/:id/status", verifyStaffAuth(["ADMIN"]), (req, res) => {
+// 5. Update booking status (ADMIN ONLY)
+router.put("/:id/status", verifyStaffAuth(["ADMIN"]), async (req, res) => {
   try {
     const bookingId = Number(req.params.id);
     const { status } = req.body;
@@ -366,37 +401,43 @@ router.put("/:id/status", verifyStaffAuth(["ADMIN"]), (req, res) => {
       return res.status(400).json({ message: `Invalid status. Must be one of: ${validStatuses.join(", ")}` });
     }
 
-    const booking = db.prepare("SELECT * FROM bookings WHERE id = ? OR booking_number = ?").get(
-      bookingId || 0,
-      req.params.id
+    const booking = await db.queryOne(
+      "SELECT * FROM bookings WHERE id = ? OR booking_number = ?",
+      [bookingId || 0, req.params.id]
     );
     if (!booking) {
       return res.status(404).json({ message: "Booking not found" });
     }
 
-    db.prepare("UPDATE bookings SET status = ? WHERE id = ?").run(status, booking.id);
+    await db.execute("UPDATE bookings SET status = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?", [
+      status,
+      booking.id,
+    ]);
 
     if (status === "CHECKED_IN") {
-      db.prepare("UPDATE restaurant_tables SET status = 'OCCUPIED', current_booking_id = ? WHERE id = ?").run(
+      await db.execute("UPDATE restaurant_tables SET status = 'OCCUPIED', current_booking_id = ? WHERE id = ?", [
         booking.id,
-        booking.table_id
-      );
+        booking.table_id,
+      ]);
     } else if (["CANCELLED", "COMPLETED", "NO_SHOW"].includes(status)) {
-      db.prepare(`
+      await db.execute(`
         UPDATE restaurant_tables 
         SET status = 'AVAILABLE', current_booking_id = NULL
         WHERE id = ? AND current_booking_id = ?
-      `).run(booking.table_id, booking.id);
+      `, [booking.table_id, booking.id]);
     }
 
-    const updatedBooking = db.prepare(`
+    const updatedBooking = await db.queryOne(`
       SELECT b.*, t.table_number, t.capacity, t.section
       FROM bookings b
       JOIN restaurant_tables t ON b.table_id = t.id
       WHERE b.id = ?
-    `).get(booking.id);
+    `, [booking.id]);
 
-    const updatedTable = db.prepare("SELECT * FROM restaurant_tables WHERE id = ?").get(booking.table_id);
+    const updatedTable = await db.queryOne(
+      "SELECT * FROM restaurant_tables WHERE id = ?",
+      [booking.table_id]
+    );
 
     broadcast("BOOKING_STATUS_UPDATED", updatedBooking);
     broadcast("TABLE_STATUS_UPDATED", updatedTable);

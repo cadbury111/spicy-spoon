@@ -97,6 +97,11 @@ function Admin({ onLogout }) {
     role: "KITCHEN",
   });
 
+  // Admin Order Action Modals
+  const [cancellingOrder, setCancellingOrder] = useState(null);
+  const [deletingOrder, setDeletingOrder] = useState(null);
+  const [actionLoading, setActionLoading] = useState(false);
+
   const [printableQrTable, setPrintableQrTable] = useState(null);
   const [tableQrCache, setTableQrCache] = useState({});
 
@@ -200,6 +205,10 @@ function Admin({ onLogout }) {
           "NEW_ORDER",
           "ORDER_CREATED",
           "ORDER_STATUS_UPDATED",
+          "ORDER_CANCELLED",
+          "ORDER_REMOVED",
+          "ORDER_ARCHIVED",
+          "ORDER_DELETED",
           "TABLE_STATUS_UPDATED",
           "TABLE_BOOKED",
           "BILL_GENERATED",
@@ -307,6 +316,44 @@ function Admin({ onLogout }) {
     } catch (err) {
       console.warn("Order update warning:", err);
       fetchAllData(false);
+    }
+  };
+
+  // Admin Cancel Order (Accidental / Pre-completion)
+  const handleConfirmCancelOrder = async () => {
+    if (!cancellingOrder) return;
+    const ord = cancellingOrder;
+    try {
+      setActionLoading(true);
+      await api.cancelOrder(ord.id);
+      setOrders((prev) => prev.map((o) => (o.id === ord.id ? { ...o, status: "CANCELLED" } : o)));
+      setCancellingOrder(null);
+      fetchAllData(false);
+    } catch (err) {
+      alert(err.message || "This order can no longer be cancelled.");
+      setCancellingOrder(null);
+      fetchAllData(false);
+    } finally {
+      setActionLoading(false);
+    }
+  };
+
+  // Admin Delete Completed Order (Safe Archiving)
+  const handleConfirmDeleteOrder = async () => {
+    if (!deletingOrder) return;
+    const ord = deletingOrder;
+    try {
+      setActionLoading(true);
+      await api.deleteOrder(ord.id);
+      setOrders((prev) => prev.filter((o) => o.id !== ord.id));
+      setDeletingOrder(null);
+      fetchAllData(false);
+    } catch (err) {
+      alert(err.message || "Failed to delete order.");
+      setDeletingOrder(null);
+      fetchAllData(false);
+    } finally {
+      setActionLoading(false);
     }
   };
 
@@ -696,14 +743,24 @@ function Admin({ onLogout }) {
 
                     <div className="order-actions-bar">
                       {ord.status === "ORDER_PLACED" && (
-                        <button className="btn-status accept" onClick={() => handleUpdateOrderStatus(ord.id, "ACCEPTED")}>
-                          Accept
-                        </button>
+                        <>
+                          <button className="btn-status accept" onClick={() => handleUpdateOrderStatus(ord.id, "ACCEPTED")}>
+                            Accept
+                          </button>
+                          <button className="btn-status cancel-order" onClick={() => setCancellingOrder(ord)}>
+                            Cancel Order
+                          </button>
+                        </>
                       )}
                       {ord.status === "ACCEPTED" && (
-                        <button className="btn-status prep" onClick={() => handleUpdateOrderStatus(ord.id, "PREPARING")}>
-                          Cook
-                        </button>
+                        <>
+                          <button className="btn-status prep" onClick={() => handleUpdateOrderStatus(ord.id, "PREPARING")}>
+                            Cook
+                          </button>
+                          <button className="btn-status cancel-order" onClick={() => setCancellingOrder(ord)}>
+                            Cancel Order
+                          </button>
+                        </>
                       )}
                       {ord.status === "PREPARING" && (
                         <button className="btn-status ready" onClick={() => handleUpdateOrderStatus(ord.id, "READY")}>
@@ -718,6 +775,11 @@ function Admin({ onLogout }) {
                       {ord.status === "SERVED" && (
                         <button className="btn-status complete" onClick={() => handleUpdateOrderStatus(ord.id, "COMPLETED")}>
                           Complete
+                        </button>
+                      )}
+                      {["COMPLETED", "CANCELLED"].includes(ord.status) && (
+                        <button className="btn-status delete-order" onClick={() => setDeletingOrder(ord)}>
+                          Delete Order
                         </button>
                       )}
                     </div>
@@ -1347,6 +1409,82 @@ function Admin({ onLogout }) {
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* CANCEL ORDER CONFIRMATION MODAL (ADMIN ONLY) */}
+      {cancellingOrder && (
+        <div className="modal-backdrop" onClick={() => !actionLoading && setCancellingOrder(null)}>
+          <div className="confirm-dialog-box" onClick={(e) => e.stopPropagation()}>
+            <div className="confirm-head">
+              <AlertCircle size={28} className="warn-icon" />
+              <h3>Cancel Order</h3>
+            </div>
+            <p className="confirm-message">
+              Are you sure you want to cancel this order?
+            </p>
+            <div className="confirm-order-preview">
+              <span>Order <strong>#{cancellingOrder.order_number}</strong></span>
+              <span>Table <strong>{cancellingOrder.tableNumber || cancellingOrder.table_number}</strong></span>
+              <span>Total: <strong>₹{Number(cancellingOrder.total).toFixed(2)}</strong></span>
+            </div>
+            <div className="confirm-actions-bar">
+              <button
+                type="button"
+                className="btn-confirm-secondary"
+                onClick={() => setCancellingOrder(null)}
+                disabled={actionLoading}
+              >
+                Keep Order
+              </button>
+              <button
+                type="button"
+                className="btn-confirm-danger"
+                onClick={handleConfirmCancelOrder}
+                disabled={actionLoading}
+              >
+                {actionLoading ? "Cancelling..." : "Cancel Order"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* DELETE COMPLETED ORDER CONFIRMATION MODAL (ADMIN ONLY) */}
+      {deletingOrder && (
+        <div className="modal-backdrop" onClick={() => !actionLoading && setDeletingOrder(null)}>
+          <div className="confirm-dialog-box" onClick={(e) => e.stopPropagation()}>
+            <div className="confirm-head">
+              <Trash2 size={28} className="danger-icon" />
+              <h3>Delete Completed Order</h3>
+            </div>
+            <p className="confirm-message">
+              Delete this completed order?
+            </p>
+            <div className="confirm-order-preview">
+              <span>Order <strong>#{deletingOrder.order_number}</strong></span>
+              <span>Table <strong>{deletingOrder.tableNumber || deletingOrder.table_number}</strong></span>
+              <span>Status: <strong>{deletingOrder.status}</strong></span>
+            </div>
+            <div className="confirm-actions-bar">
+              <button
+                type="button"
+                className="btn-confirm-secondary"
+                onClick={() => setDeletingOrder(null)}
+                disabled={actionLoading}
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                className="btn-confirm-danger"
+                onClick={handleConfirmDeleteOrder}
+                disabled={actionLoading}
+              >
+                {actionLoading ? "Deleting..." : "Delete"}
+              </button>
+            </div>
           </div>
         </div>
       )}

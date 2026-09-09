@@ -653,6 +653,121 @@
 .btn-status.ready { background: #22c55e; color: #ffffff; }
 .btn-status.serve { background: #a855f7; color: #ffffff; }
 .btn-status.complete { background: #10b981; color: #ffffff; }
+.btn-status.cancel-order {
+  background: rgba(239, 68, 68, 0.16);
+  color: #f87171;
+  border: 1px solid rgba(239, 68, 68, 0.35);
+}
+.btn-status.cancel-order:hover {
+  background: #dc2626;
+  color: #ffffff;
+}
+.btn-status.delete-order {
+  background: rgba(220, 38, 38, 0.16);
+  color: #fca5a5;
+  border: 1px solid rgba(220, 38, 38, 0.35);
+}
+.btn-status.delete-order:hover {
+  background: #b91c1c;
+  color: #ffffff;
+}
+
+/* ================= ADMIN CONFIRMATION DIALOGS ================= */
+.confirm-dialog-box {
+  background: #1e110a;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 18px;
+  width: 90%;
+  max-width: 440px;
+  padding: 24px;
+  box-shadow: 0 20px 50px rgba(0, 0, 0, 0.6);
+  animation: modalSlideUp 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+  color: #f5e6dc;
+}
+
+.confirm-head {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+.confirm-head .warn-icon {
+  color: #f59e0b;
+}
+
+.confirm-head .danger-icon {
+  color: #ef4444;
+}
+
+.confirm-head h3 {
+  margin: 0;
+  font-size: 1.25rem;
+  font-weight: 700;
+  color: #ffffff;
+}
+
+.confirm-message {
+  font-size: 0.95rem;
+  color: #d1b9aa;
+  margin-bottom: 16px;
+  line-height: 1.45;
+}
+
+.confirm-order-preview {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  background: rgba(0, 0, 0, 0.35);
+  padding: 12px 16px;
+  border-radius: 10px;
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  font-size: 0.88rem;
+  margin-bottom: 20px;
+}
+
+.confirm-actions-bar {
+  display: flex;
+  gap: 12px;
+  justify-content: flex-end;
+}
+
+.btn-confirm-secondary {
+  padding: 10px 18px;
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.08);
+  color: #f5e6dc;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  font-weight: 600;
+  font-size: 0.9rem;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.btn-confirm-secondary:hover {
+  background: rgba(255, 255, 255, 0.15);
+}
+
+.btn-confirm-danger {
+  padding: 10px 20px;
+  border-radius: 10px;
+  background: #dc2626;
+  color: #ffffff;
+  border: none;
+  font-weight: 700;
+  font-size: 0.9rem;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.btn-confirm-danger:hover {
+  background: #b91c1c;
+}
+
+.btn-confirm-danger:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
 
 /* ================= TABLES & DATA GRIDS ================= */
 .admin-table-wrapper {

@@ -18,6 +18,16 @@ function timeToMinutes(timeStr) {
   return hours * 60 + minutes;
 }
 
+function calculateEndTime(startTimeStr) {
+  const startMin = timeToMinutes(startTimeStr);
+  const endMin = startMin + 90;
+  const endH = Math.floor(endMin / 60) % 24;
+  const endM = endMin % 60;
+  const period = endH >= 12 ? "PM" : "AM";
+  const displayH = endH % 12 === 0 ? 12 : endH % 12;
+  return `${String(displayH).padStart(2, "0")}:${String(endM).padStart(2, "0")} ${period}`;
+}
+
 // Check time overlap
 function hasTimeOverlap(start1, end1, start2, end2) {
   const s1 = timeToMinutes(start1);
@@ -27,13 +37,22 @@ function hasTimeOverlap(start1, end1, start2, end2) {
   return Math.max(s1, s2) < Math.min(e1, e2);
 }
 
+function setNoCacheHeaders(res) {
+  res.set({
+    "Cache-Control": "no-store, no-cache, must-revalidate, proxy-revalidate, max-age=0",
+    "Pragma": "no-cache",
+    "Expires": "0",
+    "Surrogate-Control": "no-store",
+  });
+}
+
 // 1. Get Restaurant by slug or ID
-router.get("/:slug", (req, res) => {
+router.get("/:slug", async (req, res) => {
   try {
     const slugOrId = req.params.slug;
-    const restaurant = db.prepare("SELECT * FROM restaurants WHERE slug = ? OR id = ?").get(
-      slugOrId,
-      Number(slugOrId) || 0
+    const restaurant = await db.queryOne(
+      "SELECT * FROM restaurants WHERE slug = ? OR id = ?",
+      [slugOrId, Number(slugOrId) || 0]
     );
 
     if (!restaurant) {
@@ -51,9 +70,9 @@ router.get("/:slug", (req, res) => {
 router.get("/:slug/qr", async (req, res) => {
   try {
     const slugOrId = req.params.slug;
-    const restaurant = db.prepare("SELECT * FROM restaurants WHERE slug = ? OR id = ?").get(
-      slugOrId,
-      Number(slugOrId) || 0
+    const restaurant = await db.queryOne(
+      "SELECT * FROM restaurants WHERE slug = ? OR id = ?",
+      [slugOrId, Number(slugOrId) || 0]
     );
 
     if (!restaurant) {
@@ -93,15 +112,14 @@ router.post("/:slug/qr/regenerate", verifyStaffAuth(["ADMIN"]), async (req, res)
   try {
     const slugOrId = req.params.slug;
     const newToken = `spicy-spoon-qr-${Date.now()}`;
-    db.prepare("UPDATE restaurants SET qr_code_token = ? WHERE slug = ? OR id = ?").run(
-      newToken,
-      slugOrId,
-      Number(slugOrId) || 0
+    await db.execute(
+      "UPDATE restaurants SET qr_code_token = ? WHERE slug = ? OR id = ?",
+      [newToken, slugOrId, Number(slugOrId) || 0]
     );
 
-    const restaurant = db.prepare("SELECT * FROM restaurants WHERE slug = ? OR id = ?").get(
-      slugOrId,
-      Number(slugOrId) || 0
+    const restaurant = await db.queryOne(
+      "SELECT * FROM restaurants WHERE slug = ? OR id = ?",
+      [slugOrId, Number(slugOrId) || 0]
     );
 
     const host = req.get("host") || "localhost:5173";
@@ -124,11 +142,12 @@ router.post("/:slug/qr/regenerate", verifyStaffAuth(["ADMIN"]), async (req, res)
 });
 
 // 4. Get Tables with Availability Filtering for Visual Booking Map
-router.get("/:slug/tables", (req, res) => {
+router.get("/:slug/tables", async (req, res) => {
   try {
+    setNoCacheHeaders(res);
     const { date, time, guests } = req.query;
 
-    const tables = db.prepare(`
+    const tables = await db.query(`
       SELECT 
         t.*,
         b.booking_number,
@@ -144,17 +163,21 @@ router.get("/:slug/tables", (req, res) => {
       LEFT JOIN bookings b ON t.current_booking_id = b.id
       LEFT JOIN orders o ON t.current_order_id = o.id
       ORDER BY t.id ASC
-    `).all();
+    `);
 
     let requestedEndTime = null;
     if (time) {
-      const startMin = timeToMinutes(time);
-      const endMin = startMin + 90;
-      const endH = Math.floor(endMin / 60) % 24;
-      const endM = endMin % 60;
-      const period = endH >= 12 ? "PM" : "AM";
-      const displayH = endH % 12 === 0 ? 12 : endH % 12;
-      requestedEndTime = `${String(displayH).padStart(2, "0")}:${String(endM).padStart(2, "0")} ${period}`;
+      requestedEndTime = calculateEndTime(time);
+    }
+
+    // Query active bookings for the specified date
+    let activeBookings = [];
+    if (date) {
+      activeBookings = await db.query(`
+        SELECT * FROM bookings
+        WHERE booking_date = ?
+          AND status IN ('CONFIRMED', 'CHECKED_IN', 'PENDING')
+      `, [date]);
     }
 
     const processedTables = tables.map((t) => {
@@ -170,12 +193,7 @@ router.get("/:slug/tables", (req, res) => {
 
       // Check time overlap on target date
       if (date && time && requestedEndTime) {
-        const bookingsForTable = db.prepare(`
-          SELECT * FROM bookings
-          WHERE table_id = ?
-            AND booking_date = ?
-            AND status IN ('CONFIRMED', 'CHECKED_IN', 'PENDING')
-        `).all(t.id, date);
+        const bookingsForTable = activeBookings.filter((bk) => bk.table_id === t.id);
 
         for (const bk of bookingsForTable) {
           if (hasTimeOverlap(time, requestedEndTime, bk.start_time, bk.end_time)) {

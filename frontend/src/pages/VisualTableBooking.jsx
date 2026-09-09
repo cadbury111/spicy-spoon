@@ -24,6 +24,9 @@ import { useWebSocket } from "../hooks/useWebSocket";
 import "./VisualTableBooking.css";
 
 const TIME_SLOTS = [
+  { time: "08:30 AM", label: "08:30 AM (Breakfast)" },
+  { time: "09:30 AM", label: "09:30 AM (Breakfast)" },
+  { time: "10:30 AM", label: "10:30 AM (Breakfast)" },
   { time: "12:00 PM", label: "12:00 PM (Lunch)" },
   { time: "01:00 PM", label: "01:00 PM (Lunch)" },
   { time: "02:00 PM", label: "02:00 PM (Lunch)" },

@@ -16,6 +16,16 @@ function timeToMinutes(timeStr) {
   return hours * 60 + minutes;
 }
 
+function calculateEndTime(startTimeStr) {
+  const startMin = timeToMinutes(startTimeStr);
+  const endMin = startMin + 90;
+  const endH = Math.floor(endMin / 60) % 24;
+  const endM = endMin % 60;
+  const period = endH >= 12 ? "PM" : "AM";
+  const displayH = endH % 12 === 0 ? 12 : endH % 12;
+  return `${String(displayH).padStart(2, "0")}:${String(endM).padStart(2, "0")} ${period}`;
+}
+
 function hasTimeOverlap(start1, end1, start2, end2) {
   const s1 = timeToMinutes(start1);
   const e1 = timeToMinutes(end1);
@@ -24,9 +34,19 @@ function hasTimeOverlap(start1, end1, start2, end2) {
   return Math.max(s1, s2) < Math.min(e1, e2);
 }
 
+function setNoCacheHeaders(res) {
+  res.set({
+    "Cache-Control": "no-store, no-cache, must-revalidate, proxy-revalidate, max-age=0",
+    "Pragma": "no-cache",
+    "Expires": "0",
+    "Surrogate-Control": "no-store",
+  });
+}
+
 // Get all tables with current status and active booking/order info
-router.get("/", (req, res) => {
+router.get("/", async (req, res) => {
   try {
+    setNoCacheHeaders(res);
     const { date, time, guests, section } = req.query;
 
     let queryStr = `
@@ -72,20 +92,24 @@ router.get("/", (req, res) => {
     }
     queryStr += " ORDER BY t.id ASC";
 
-    const tables = db.prepare(queryStr).all(...params);
+    const tables = await db.query(queryStr, params);
 
     let requestedEndTime = null;
     if (time) {
-      const startMin = timeToMinutes(time);
-      const endMin = startMin + 90;
-      const endH = Math.floor(endMin / 60) % 24;
-      const endM = endMin % 60;
-      const period = endH >= 12 ? "PM" : "AM";
-      const displayH = endH % 12 === 0 ? 12 : endH % 12;
-      requestedEndTime = `${String(displayH).padStart(2, "0")}:${String(endM).padStart(2, "0")} ${period}`;
+      requestedEndTime = calculateEndTime(time);
     }
 
     const todayStr = new Date().toISOString().split("T")[0];
+
+    // Fetch active bookings for target date
+    let activeDateBookings = [];
+    if (date) {
+      activeDateBookings = await db.query(`
+        SELECT * FROM bookings
+        WHERE booking_date = ?
+          AND status IN ('CONFIRMED', 'CHECKED_IN', 'PENDING')
+      `, [date]);
+    }
 
     const processedTables = tables.map((t) => {
       let isAvailableForSlot = true;
@@ -120,12 +144,7 @@ router.get("/", (req, res) => {
 
       // Check time overlap on target date for reservation booking
       if (date && time && requestedEndTime) {
-        const bookingsForTable = db.prepare(`
-          SELECT * FROM bookings
-          WHERE table_id = ?
-            AND booking_date = ?
-            AND status IN ('CONFIRMED', 'CHECKED_IN', 'PENDING')
-        `).all(t.id, date);
+        const bookingsForTable = activeDateBookings.filter((bk) => bk.table_id === t.id);
 
         for (const bk of bookingsForTable) {
           if (hasTimeOverlap(time, requestedEndTime, bk.start_time, bk.end_time)) {
@@ -156,10 +175,11 @@ router.get("/", (req, res) => {
 });
 
 // Get single table
-router.get("/:id", (req, res) => {
+router.get("/:id", async (req, res) => {
   try {
+    setNoCacheHeaders(res);
     const tableId = Number(req.params.id);
-    const query = db.prepare(`
+    const table = await db.queryOne(`
       SELECT 
         t.*,
         b.booking_number,
@@ -173,8 +193,8 @@ router.get("/:id", (req, res) => {
       LEFT JOIN bookings b ON t.current_booking_id = b.id
       LEFT JOIN orders o ON t.current_order_id = o.id
       WHERE t.id = ? OR t.table_number = ?
-    `);
-    const table = query.get(tableId || 0, req.params.id);
+    `, [tableId || 0, req.params.id]);
+
     if (!table) {
       return res.status(404).json({ message: "Table not found" });
     }
@@ -185,7 +205,7 @@ router.get("/:id", (req, res) => {
 });
 
 // Update table status (ADMIN ONLY)
-router.put("/:id/status", verifyStaffAuth(["ADMIN"]), (req, res) => {
+router.put("/:id/status", verifyStaffAuth(["ADMIN"]), async (req, res) => {
   try {
     const tableId = Number(req.params.id);
     const { status, current_booking_id, current_order_id, current_session_id } = req.body;
@@ -204,36 +224,33 @@ router.put("/:id/status", verifyStaffAuth(["ADMIN"]), (req, res) => {
       return res.status(400).json({ message: `Invalid status. Must be one of: ${validStatuses.join(", ")}` });
     }
 
-    let updateStmt;
     if (status === "AVAILABLE") {
-      updateStmt = db.prepare(`
+      await db.execute(`
         UPDATE restaurant_tables
         SET status = ?, current_booking_id = NULL, current_order_id = NULL, current_session_id = NULL
         WHERE id = ? OR table_number = ?
-      `);
-      updateStmt.run(status, tableId || 0, req.params.id);
+      `, [status, tableId || 0, req.params.id]);
     } else {
-      updateStmt = db.prepare(`
+      await db.execute(`
         UPDATE restaurant_tables
         SET status = ?,
             current_booking_id = COALESCE(?, current_booking_id),
             current_order_id = COALESCE(?, current_order_id),
             current_session_id = COALESCE(?, current_session_id)
         WHERE id = ? OR table_number = ?
-      `);
-      updateStmt.run(
+      `, [
         status,
         current_booking_id !== undefined ? current_booking_id : null,
         current_order_id !== undefined ? current_order_id : null,
         current_session_id !== undefined ? current_session_id : null,
         tableId || 0,
-        req.params.id
-      );
+        req.params.id,
+      ]);
     }
 
-    const updatedTable = db.prepare("SELECT * FROM restaurant_tables WHERE id = ? OR table_number = ?").get(
-      tableId || 0,
-      req.params.id
+    const updatedTable = await db.queryOne(
+      "SELECT * FROM restaurant_tables WHERE id = ? OR table_number = ?",
+      [tableId || 0, req.params.id]
     );
 
     broadcast("TABLE_STATUS_UPDATED", updatedTable);
@@ -246,25 +263,27 @@ router.put("/:id/status", verifyStaffAuth(["ADMIN"]), (req, res) => {
 });
 
 // Create new table (ADMIN ONLY)
-router.post("/", verifyStaffAuth(["ADMIN"]), (req, res) => {
+router.post("/", verifyStaffAuth(["ADMIN"]), async (req, res) => {
   try {
     const { table_number, capacity, section, x_pos = 0, y_pos = 0 } = req.body;
     if (!table_number || !capacity || !section) {
       return res.status(400).json({ message: "Table number, capacity, and section are required" });
     }
 
-    const insertStmt = db.prepare(`
+    const result = await db.execute(`
       INSERT INTO restaurant_tables (table_number, capacity, section, status, x_pos, y_pos)
       VALUES (?, ?, ?, 'AVAILABLE', ?, ?)
-    `);
-    const result = insertStmt.run(table_number, Number(capacity), section, Number(x_pos), Number(y_pos));
+    `, [table_number, Number(capacity), section, Number(x_pos), Number(y_pos)]);
 
-    const newTable = db.prepare("SELECT * FROM restaurant_tables WHERE id = ?").get(result.lastInsertRowid);
+    const newTable = await db.queryOne(
+      "SELECT * FROM restaurant_tables WHERE id = ?",
+      [result.lastInsertRowid]
+    );
     broadcast("TABLE_CREATED", newTable);
 
     res.status(201).json({ message: "Table created successfully", table: newTable });
   } catch (error) {
-    if (error.message.includes("UNIQUE constraint failed")) {
+    if (error.message && (error.message.includes("UNIQUE constraint failed") || error.code === "23505")) {
       return res.status(409).json({ message: "A table with this number already exists" });
     }
     res.status(500).json({ message: "Failed to create table", error: error.message });
