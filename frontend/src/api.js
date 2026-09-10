@@ -233,7 +233,7 @@ async function request(endpoint, options = {}) {
     }
     // Prevent client fallback from storing bookings in localStorage if running against a backend
     if (endpoint.startsWith("/bookings") && method === "POST") {
-      throw new Error(netOrHttpErr.message || "Failed to reach booking server. Please check your connection.");
+      throw new Error(netOrHttpErr.message || "Failed to reach booking server. Please check your connection.", { cause: netOrHttpErr });
     }
     return handleClientFallback(endpoint, options, netOrHttpErr);
   }

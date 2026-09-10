@@ -242,7 +242,7 @@ function CustomerMenu() {
         }
       }
     },
-    [fetchActiveOrders, fetchTables, tableNumber, activeSessionId]
+    [fetchActiveOrders, fetchTables, tableNumber, activeSessionId, triggerConfetti]
   );
 
   useWebSocket(handleWsEvent);

@@ -283,7 +283,7 @@ function BillPayment({ billId = null, tableParam = null, sessionParam = null, or
     } finally {
       setLoading(false);
     }
-  }, [billId, targetTable, targetSession, discountCode, handlePaymentSuccess]);
+  }, [billId, targetTable, targetSession, discountCode, handlePaymentSuccess, targetOrderId]);
 
   useEffect(() => {
     fetchLiveBill();
