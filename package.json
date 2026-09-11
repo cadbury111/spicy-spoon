@@ -8,6 +8,9 @@
     "build": "cd frontend && npm install && npm run build",
     "db:setup": "node backend/db/setup-db.js"
   },
+  "engines": {
+    "node": ">=22.x"
+  },
   "dependencies": {
     "@libsql/client": "^0.18.0",
     "bcryptjs": "^3.0.3",

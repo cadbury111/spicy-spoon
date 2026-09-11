@@ -10,9 +10,9 @@ function generateBookingNumber() {
 }
 
 function timeToMinutes(timeStr) {
-  if (!timeStr) return 0;
+  if (!timeStr || typeof timeStr !== "string") return null;
   const match = timeStr.trim().match(/^(\d{1,2}):(\d{2})\s*(AM|PM)$/i);
-  if (!match) return 0;
+  if (!match) return null;
   let hours = parseInt(match[1], 10);
   const minutes = parseInt(match[2], 10);
   const period = match[3].toUpperCase();
@@ -22,7 +22,7 @@ function timeToMinutes(timeStr) {
 }
 
 function calculateEndTime(startTimeStr) {
-  const startMin = timeToMinutes(startTimeStr);
+  const startMin = timeToMinutes(startTimeStr) ?? 0;
   const endMin = startMin + 90;
   const endH = Math.floor(endMin / 60) % 24;
   const endM = endMin % 60;
@@ -32,17 +32,17 @@ function calculateEndTime(startTimeStr) {
 }
 
 function determineMealType(timeStr) {
-  const mins = timeToMinutes(timeStr);
+  const mins = timeToMinutes(timeStr) ?? 0;
   if (mins >= 360 && mins <= 690) return "BREAKFAST"; // 06:00 AM - 11:30 AM
   if (mins > 690 && mins < 1020) return "LUNCH";     // 11:31 AM - 04:59 PM
   return "DINNER";                                   // 05:00 PM onwards
 }
 
 function hasTimeOverlap(start1, end1, start2, end2) {
-  const s1 = timeToMinutes(start1);
-  const e1 = timeToMinutes(end1);
-  const s2 = timeToMinutes(start2);
-  const e2 = timeToMinutes(end2);
+  const s1 = timeToMinutes(start1) ?? 0;
+  const e1 = timeToMinutes(end1) ?? 0;
+  const s2 = timeToMinutes(start2) ?? 0;
+  const e2 = timeToMinutes(end2) ?? 0;
   return Math.max(s1, s2) < Math.min(e1, e2);
 }
 
@@ -204,15 +204,15 @@ router.post("/", async (req, res) => {
     if (!booking_date || !/^\d{4}-\d{2}-\d{2}$/.test(booking_date)) {
       return res.status(400).json({ success: false, message: "Valid booking date (YYYY-MM-DD) is required" });
     }
-    if (!start_time || !timeToMinutes(start_time)) {
-      return res.status(400).json({ success: false, message: "Valid start time is required" });
+    if (!start_time || timeToMinutes(start_time) === null) {
+      return res.status(400).json({ success: false, message: "Valid start time is required (e.g. 07:30 PM)" });
     }
     if (!guest_count || Number(guest_count) < 1) {
       return res.status(400).json({ success: false, message: "Guest count must be at least 1" });
     }
 
     const calculatedEndTime = end_time || calculateEndTime(start_time);
-    const mealType = determineMealType(start_time);
+    const mealType = req.body.meal_type || req.body.mealType || determineMealType(start_time);
     const searchTableKey = table_id || table_number;
 
     // Atomic Database Transaction
@@ -313,8 +313,10 @@ router.post("/", async (req, res) => {
       const newBookingId = insertResult.lastInsertRowid;
 
       // Link booking to table if date is today
-      const todayStr = new Date().toISOString().split("T")[0];
-      if (booking_date === todayStr) {
+      const now = new Date();
+      const todayUtc = now.toISOString().split("T")[0];
+      const todayLocal = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
+      if (booking_date === todayUtc || booking_date === todayLocal) {
         await trx.execute(
           "UPDATE restaurant_tables SET status = 'RESERVED', current_booking_id = ? WHERE id = ?",
           [newBookingId, targetTable.id]

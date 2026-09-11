@@ -32,7 +32,6 @@ if (postgresUrl) {
   console.log("✓ Centralized Turso (libSQL) Database connected via TURSO_DATABASE_URL.");
 } else {
   dbType = "sqlite";
-  const { DatabaseSync } = require("node:sqlite");
   const isServerless = Boolean(process.env.VERCEL || process.env.AWS_LAMBDA_FUNCTION_NAME);
   const dbDir = path.join(__dirname);
   let dbPath;
@@ -56,10 +55,21 @@ if (postgresUrl) {
     dbPath = path.join(dbDir, "restaurant.db");
   }
 
-  sqliteDb = new DatabaseSync(dbPath);
   try {
-    sqliteDb.exec("PRAGMA foreign_keys = ON;");
-  } catch (e) {}
+    const { DatabaseSync } = require("node:sqlite");
+    sqliteDb = new DatabaseSync(dbPath);
+    try {
+      sqliteDb.exec("PRAGMA foreign_keys = ON;");
+    } catch (e) {}
+  } catch (err) {
+    // If node:sqlite is not available (e.g. Node 20 on Vercel), fall back to @libsql/client file protocol
+    console.log("ℹ️ node:sqlite not available, falling back to @libsql/client for SQLite file:", dbPath);
+    dbType = "turso";
+    const { createClient } = require("@libsql/client");
+    tursoClient = createClient({
+      url: `file:${dbPath.replace(/\\/g, "/")}`,
+    });
+  }
 }
 
 // Convert ? placeholders to $1, $2 for PostgreSQL
@@ -72,7 +82,20 @@ function formatSqlForPg(sql) {
 // UNIVERSAL ASYNC DATABASE INTERFACE
 // ==========================================
 
+let initPromise = null;
+
+async function ensureInit() {
+  if (initPromise) {
+    try {
+      await initPromise;
+    } catch (err) {
+      console.error("Database schema ensureInit error:", err);
+    }
+  }
+}
+
 async function query(sql, params = []) {
+  await ensureInit();
   if (dbType === "postgres") {
     const res = await pgPool.query(formatSqlForPg(sql), params);
     return res.rows;
@@ -85,6 +108,7 @@ async function query(sql, params = []) {
 }
 
 async function queryOne(sql, params = []) {
+  await ensureInit();
   if (dbType === "postgres") {
     const res = await pgPool.query(formatSqlForPg(sql), params);
     return res.rows[0] || null;
@@ -97,6 +121,7 @@ async function queryOne(sql, params = []) {
 }
 
 async function execute(sql, params = []) {
+  await ensureInit();
   if (dbType === "postgres") {
     let pgSql = sql;
     const isInsert = /^\s*INSERT\s+INTO/i.test(sql);
@@ -122,6 +147,7 @@ async function execute(sql, params = []) {
 }
 
 async function transaction(fn) {
+  await ensureInit();
   if (dbType === "postgres") {
     const client = await pgPool.connect();
     try {
@@ -732,7 +758,7 @@ async function initSchema() {
 }
 
 // Automatically initialize schema
-const initPromise = initSchema().catch((err) => {
+initPromise = initSchema().catch((err) => {
   console.error("Database initialization error:", err);
 });
 
@@ -744,6 +770,7 @@ module.exports = {
   execute,
   transaction,
   initPromise,
+  ensureInit,
   // Synchronous SQLite compatibility for remaining synchronous routes & tests:
   prepare: (sql) => {
     if (sqliteDb) return sqliteDb.prepare(sql);

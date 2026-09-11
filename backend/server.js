@@ -19,6 +19,14 @@ const settingsRouter = require("./routes/settings");
 
 const app = express();
 
+// Support pre-parsed body from Vercel Serverless environment
+app.use((req, res, next) => {
+  if (req.body && typeof req.body === "object" && !req._body) {
+    req._body = true;
+  }
+  next();
+});
+
 app.use(cors());
 app.use(express.json());
 
@@ -60,6 +68,7 @@ const routers = [
 ];
 
 routers.forEach(({ path, router }) => {
+  app.use(`/api/index.js${path}`, router);
   app.use(`/api${path}`, router);
   app.use(path, router);
 });

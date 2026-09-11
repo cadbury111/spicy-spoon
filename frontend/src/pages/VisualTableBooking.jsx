@@ -95,11 +95,22 @@ function VisualTableBooking({ slug = "spicy-spoon" }) {
   const [confirmedBooking, setConfirmedBooking] = useState(null);
   const [errorMessage, setErrorMessage] = useState("");
 
-  const [bookingForm, setBookingForm] = useState({
-    customer_name: "",
-    customer_phone: "",
-    customer_email: "",
-    special_notes: "",
+  const [bookingForm, setBookingForm] = useState(() => {
+    let customer_name = "";
+    let customer_phone = "";
+    let customer_email = "";
+    try {
+      const savedUser = JSON.parse(localStorage.getItem("spicy_last_guest") || "{}");
+      if (savedUser.name) customer_name = savedUser.name;
+      if (savedUser.phone) customer_phone = savedUser.phone;
+      if (savedUser.email) customer_email = savedUser.email;
+    } catch (e) {}
+    return {
+      customer_name,
+      customer_phone,
+      customer_email,
+      special_notes: "",
+    };
   });
 
   // Fetch Tables & Availability
@@ -228,6 +239,12 @@ function VisualTableBooking({ slug = "spicy-spoon" }) {
       setIsSubmitting(true);
       setErrorMessage("");
 
+      // Resolve meal type if known
+      const slotObj = TIME_SLOTS.find((s) => s.time === selectedTime);
+      let detectedMeal = "DINNER";
+      if (slotObj?.label.includes("Breakfast")) detectedMeal = "BREAKFAST";
+      else if (slotObj?.label.includes("Lunch")) detectedMeal = "LUNCH";
+
       const payload = {
         table_id: selectedTable.id,
         table_number: selectedTable.table_number,
@@ -236,6 +253,7 @@ function VisualTableBooking({ slug = "spicy-spoon" }) {
         customer_email: bookingForm.customer_email.trim(),
         booking_date: selectedDate,
         start_time: selectedTime,
+        meal_type: detectedMeal,
         guest_count: Number(guestCount),
         special_notes: bookingForm.special_notes.trim(),
       };
@@ -246,7 +264,15 @@ function VisualTableBooking({ slug = "spicy-spoon" }) {
         setConfirmedBooking(res.booking);
         setShowBookingModal(false);
 
-        // Store active session reference for customer
+        // Store active session reference and guest details
+        try {
+          localStorage.setItem("spicy_last_guest", JSON.stringify({
+            name: payload.customer_name,
+            phone: payload.customer_phone,
+            email: payload.customer_email,
+          }));
+        } catch (e) {}
+
         if (res.session_id) {
           localStorage.setItem("spicy_last_session", res.session_id);
           localStorage.setItem("spicy_last_table", selectedTable.table_number);
@@ -270,7 +296,16 @@ function VisualTableBooking({ slug = "spicy-spoon" }) {
       console.error("Booking error:", err);
       const msg = err.data?.message || err.message || "Failed to confirm table booking. Please choose another table.";
       setErrorMessage(msg);
-      setSelectedTable(null);
+      // Only unselect table if it's a conflict error (409) where the table is no longer available
+      if (
+        err.status === 409 ||
+        err.statusCode === 409 ||
+        msg.includes("already been booked") ||
+        msg.includes("just booked by another guest")
+      ) {
+        setSelectedTable(null);
+        setShowBookingModal(false);
+      }
       fetchAvailability(false);
     } finally {
       setIsSubmitting(false);
@@ -600,6 +635,13 @@ function VisualTableBooking({ slug = "spicy-spoon" }) {
                   <strong>90 Minutes (Standard Dining)</strong>
                 </div>
               </div>
+
+              {errorMessage && (
+                <div className="booking-error-banner" style={{ margin: "0 0 16px 0" }}>
+                  <AlertCircle size={18} />
+                  <span>{errorMessage}</span>
+                </div>
+              )}
 
               <div className="modal-actions">
                 <button
