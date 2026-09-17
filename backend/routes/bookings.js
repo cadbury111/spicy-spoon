@@ -11,14 +11,24 @@ function generateBookingNumber() {
 
 function timeToMinutes(timeStr) {
   if (!timeStr || typeof timeStr !== "string") return null;
-  const match = timeStr.trim().match(/^(\d{1,2}):(\d{2})\s*(AM|PM)$/i);
-  if (!match) return null;
-  let hours = parseInt(match[1], 10);
-  const minutes = parseInt(match[2], 10);
-  const period = match[3].toUpperCase();
-  if (period === "PM" && hours !== 12) hours += 12;
-  if (period === "AM" && hours === 12) hours = 0;
-  return hours * 60 + minutes;
+  const match12 = timeStr.trim().match(/^(\d{1,2}):(\d{2})\s*(AM|PM)$/i);
+  if (match12) {
+    let hours = parseInt(match12[1], 10);
+    const minutes = parseInt(match12[2], 10);
+    const period = match12[3].toUpperCase();
+    if (period === "PM" && hours !== 12) hours += 12;
+    if (period === "AM" && hours === 12) hours = 0;
+    return hours * 60 + minutes;
+  }
+  const match24 = timeStr.trim().match(/^(\d{1,2}):(\d{2})$/);
+  if (match24) {
+    const hours = parseInt(match24[1], 10);
+    const minutes = parseInt(match24[2], 10);
+    if (hours >= 0 && hours < 24 && minutes >= 0 && minutes < 60) {
+      return hours * 60 + minutes;
+    }
+  }
+  return null;
 }
 
 function calculateEndTime(startTimeStr) {
@@ -204,8 +214,27 @@ router.post("/", async (req, res) => {
     if (!booking_date || !/^\d{4}-\d{2}-\d{2}$/.test(booking_date)) {
       return res.status(400).json({ success: false, message: "Valid booking date (YYYY-MM-DD) is required" });
     }
-    if (!start_time || timeToMinutes(start_time) === null) {
+    
+    const now = new Date();
+    const todayUtc = now.toISOString().split("T")[0];
+    const todayLocal = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
+
+    if (booking_date < todayUtc && booking_date < todayLocal) {
+      return res.status(400).json({ success: false, message: "Booking date cannot be in the past" });
+    }
+
+    const startMins = timeToMinutes(start_time);
+    if (startMins === null) {
       return res.status(400).json({ success: false, message: "Valid start time is required (e.g. 07:30 PM)" });
+    }
+
+    const isToday = booking_date === todayUtc || booking_date === todayLocal;
+    const currentMins = now.getHours() * 60 + now.getMinutes();
+    if (isToday && startMins < currentMins - 15) {
+      return res.status(400).json({
+        success: false,
+        message: "The selected time slot has already passed for today. Please choose an upcoming time slot.",
+      });
     }
     if (!guest_count || Number(guest_count) < 1) {
       return res.status(400).json({ success: false, message: "Guest count must be at least 1" });
@@ -216,7 +245,7 @@ router.post("/", async (req, res) => {
     const searchTableKey = table_id || table_number;
 
     // Atomic Database Transaction
-    const { createdBooking, updatedTable } = await db.transaction(async (trx) => {
+    const { createdBooking, updatedTable, sessionId } = await db.transaction(async (trx) => {
       let targetTable;
 
       if (searchTableKey) {
@@ -312,15 +341,36 @@ router.post("/", async (req, res) => {
 
       const newBookingId = insertResult.lastInsertRowid;
 
-      // Link booking to table if date is today
-      const now = new Date();
-      const todayUtc = now.toISOString().split("T")[0];
-      const todayLocal = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
-      if (booking_date === todayUtc || booking_date === todayLocal) {
-        await trx.execute(
-          "UPDATE restaurant_tables SET status = 'RESERVED', current_booking_id = ? WHERE id = ?",
-          [newBookingId, targetTable.id]
-        );
+      // Create linked guest dining session
+      const newSessionId = `SESSION-${targetTable.table_number}-${Date.now().toString().slice(-6)}`;
+      await trx.execute(`
+        INSERT INTO guest_sessions (
+          session_id, restaurant_id, table_id, table_number, booking_id, customer_name, customer_phone, status
+        ) VALUES (?, 1, ?, ?, ?, ?, ?, 'ACTIVE')
+      `, [
+        newSessionId,
+        targetTable.id,
+        targetTable.table_number,
+        newBookingId,
+        String(customer_name).trim(),
+        String(customer_phone).trim(),
+      ]);
+
+      // If booking is today and within active window, set table to RESERVED
+      if (isToday) {
+        const endMins = (timeToMinutes(calculatedEndTime) ?? (startMins + 90));
+        const isCurrentlyActive = currentMins >= startMins - 45 && currentMins <= endMins;
+        if (isCurrentlyActive) {
+          await trx.execute(
+            "UPDATE restaurant_tables SET status = 'RESERVED', current_booking_id = ?, current_session_id = ? WHERE id = ?",
+            [newBookingId, newSessionId, targetTable.id]
+          );
+        } else {
+          await trx.execute(
+            "UPDATE restaurant_tables SET current_session_id = COALESCE(current_session_id, ?) WHERE id = ?",
+            [newSessionId, targetTable.id]
+          );
+        }
       }
 
       const booked = await trx.queryOne(`
@@ -335,7 +385,7 @@ router.post("/", async (req, res) => {
         [targetTable.id]
       );
 
-      return { createdBooking: booked, updatedTable: tableState };
+      return { createdBooking: booked, updatedTable: tableState, sessionId: newSessionId };
     });
 
     // Real-time broadcast to all connected devices and browsers
@@ -351,6 +401,7 @@ router.post("/", async (req, res) => {
       guestCount: createdBooking.guest_count,
       bookingStatus: createdBooking.status,
       booking: createdBooking,
+      sessionId,
     });
     broadcast("NEW_BOOKING", createdBooking);
     broadcast("TABLE_STATUS_UPDATED", updatedTable);
@@ -360,6 +411,7 @@ router.post("/", async (req, res) => {
       message: `Table ${updatedTable.table_number} reserved successfully!`,
       booking: createdBooking,
       table: updatedTable,
+      session_id: sessionId,
     });
   } catch (error) {
     // Database-level uniqueness collision protection (e.g. concurrent duplicate insert)

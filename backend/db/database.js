@@ -46,7 +46,7 @@ if (postgresUrl) {
     if (fs.existsSync(bundledDbPath) && !fs.existsSync(dbPath)) {
       try {
         fs.copyFileSync(bundledDbPath, dbPath);
-      } catch (e) {}
+      } catch (e) { }
     }
   } else {
     if (!fs.existsSync(dbDir)) {
@@ -60,7 +60,7 @@ if (postgresUrl) {
     sqliteDb = new DatabaseSync(dbPath);
     try {
       sqliteDb.exec("PRAGMA foreign_keys = ON;");
-    } catch (e) {}
+    } catch (e) { }
   } catch (err) {
     // If node:sqlite is not available (e.g. Node 20 on Vercel), fall back to @libsql/client file protocol
     console.log("ℹ️ node:sqlite not available, falling back to @libsql/client for SQLite file:", dbPath);
@@ -227,7 +227,7 @@ async function transaction(fn) {
     } catch (err) {
       try {
         sqliteDb.exec("ROLLBACK;");
-      } catch (e) {}
+      } catch (e) { }
       throw err;
     }
   }
@@ -248,7 +248,7 @@ const targetTables = [
   { number: "T9", capacity: 4, section: "Outdoor Patio", x: 1, y: 3 },
   { number: "T10", capacity: 6, section: "Outdoor Patio", x: 2, y: 3 },
   { number: "T11", capacity: 8, section: "VIP Lounge", x: 3, y: 3 },
-  { number: "T12", capacity: 8, section: "VIP Lounge", x: 4, y: 3 },
+  { number: "T12", capacity: 10, section: "VIP Lounge", x: 4, y: 3 },
 ];
 
 const initialMenu = [
@@ -685,7 +685,7 @@ async function initSchema() {
         if (!exists) {
           sqliteDb.exec(`ALTER TABLE ${tableName} ADD COLUMN ${columnName} ${columnDefinition};`);
         }
-      } catch (err) {}
+      } catch (err) { }
     }
 
     safeAddColumn("restaurants", "service_charge_rate", "REAL DEFAULT 2.5");
