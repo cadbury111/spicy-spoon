@@ -34,8 +34,9 @@ function Kitchen({ onLogout }) {
     try {
       if (isInitial) setLoading(true);
       const data = await api.getOrders();
+      const safeData = Array.isArray(data) ? data : (data?.orders && Array.isArray(data.orders) ? data.orders : []);
       // Keep active kitchen orders
-      const kitchenOrders = (data || []).filter((o) =>
+      const kitchenOrders = safeData.filter((o) =>
         ["ORDER_PLACED", "ACCEPTED", "PREPARING", "READY", "SERVED"].includes(o.status)
       );
       setOrders(kitchenOrders);
@@ -120,10 +121,11 @@ function Kitchen({ onLogout }) {
   };
 
   // Group orders by KDS lanes
-  const newOrders = useMemo(() => orders.filter((o) => o.status === "ORDER_PLACED"), [orders]);
-  const acceptedOrders = useMemo(() => orders.filter((o) => o.status === "ACCEPTED"), [orders]);
-  const prepOrders = useMemo(() => orders.filter((o) => o.status === "PREPARING"), [orders]);
-  const readyOrders = useMemo(() => orders.filter((o) => o.status === "READY"), [orders]);
+  const safeOrders = Array.isArray(orders) ? orders : [];
+  const newOrders = useMemo(() => safeOrders.filter((o) => o.status === "ORDER_PLACED"), [orders]);
+  const acceptedOrders = useMemo(() => safeOrders.filter((o) => o.status === "ACCEPTED"), [orders]);
+  const prepOrders = useMemo(() => safeOrders.filter((o) => o.status === "PREPARING"), [orders]);
+  const readyOrders = useMemo(() => safeOrders.filter((o) => o.status === "READY"), [orders]);
 
   const getTimeElapsed = (createdAt) => {
     if (!createdAt) return "Just now";

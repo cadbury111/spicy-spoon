@@ -12,7 +12,8 @@ function OrderHistory() {
     try {
       setLoading(true);
       const data = await api.getOrders();
-      const completed = data.filter((o) => ["COMPLETED", "completed"].includes(o.status));
+      const safeData = Array.isArray(data) ? data : (data?.orders && Array.isArray(data.orders) ? data.orders : []);
+      const completed = safeData.filter((o) => ["COMPLETED", "completed"].includes(o.status));
       setOrders(completed);
     } catch (error) {
       console.error("Error fetching order history:", error);
@@ -77,7 +78,7 @@ function OrderHistory() {
           </div>
         ) : (
           <div className="history-grid">
-            {orders.map((order) => (
+            {(Array.isArray(orders) ? orders : []).map((order) => (
               <div className="history-card" key={order.id}>
                 <div className="history-card-header">
                   <div>
