@@ -11,14 +11,29 @@ module.exports = (req, res) => {
   }
 
   // Restore the original request path if rewritten by Vercel serverless engine
-  const matchedPath = req.headers["x-matched-path"] || req.headers["x-forwarded-uri"] || req.headers["x-original-url"] || req.headers["x-now-route-matches"];
-  if (matchedPath && !matchedPath.includes("index.js")) {
-    const queryPart = req.url && req.url.includes("?") ? req.url.slice(req.url.indexOf("?")) : "";
-    req.url = matchedPath + (matchedPath.includes("?") ? "" : queryPart);
-  } else if (req.url && req.url.startsWith("/api/index.js")) {
-    req.url = req.url.replace("/api/index.js", "/api") || "/api";
-  } else if (req.url && req.url.startsWith("/index.js")) {
-    req.url = req.url.replace("/index.js", "/api") || "/api";
+  let pathArg = null;
+  if (req.url && req.url.includes("__path=")) {
+    try {
+      const u = new URL(req.url, "http://localhost");
+      pathArg = u.searchParams.get("__path");
+      u.searchParams.delete("__path");
+      const remainingSearch = u.search;
+      if (pathArg) {
+        req.url = `/api/${pathArg.replace(/^\//, "")}${remainingSearch}`;
+      }
+    } catch (e) {}
+  }
+
+  if (!pathArg) {
+    const matchedPath = req.headers["x-matched-path"] || req.headers["x-forwarded-uri"] || req.headers["x-original-url"] || req.headers["x-now-route-matches"];
+    if (matchedPath && !matchedPath.includes("index.js")) {
+      const queryPart = req.url && req.url.includes("?") ? req.url.slice(req.url.indexOf("?")) : "";
+      req.url = matchedPath + (matchedPath.includes("?") ? "" : queryPart);
+    } else if (req.url && req.url.startsWith("/api/index.js")) {
+      req.url = req.url.replace("/api/index.js", "/api") || "/api";
+    } else if (req.url && req.url.startsWith("/index.js")) {
+      req.url = req.url.replace("/index.js", "/api") || "/api";
+    }
   }
 
   return app(req, res);

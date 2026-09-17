@@ -122,14 +122,18 @@ function Admin({ onLogout }) {
         api.getCashRequests().catch(() => []),
       ]);
 
-      if (aData) setAnalytics(aData);
-      if (tData) setTables(tData);
-      if (oData) setOrders(oData);
-      if (bData) {
+      if (aData && typeof aData === "object" && !Array.isArray(aData)) setAnalytics(aData);
+      if (Array.isArray(tData)) setTables(tData);
+      else if (tData?.tables && Array.isArray(tData.tables)) setTables(tData.tables);
+
+      if (Array.isArray(oData)) setOrders(oData);
+      else if (oData?.orders && Array.isArray(oData.orders)) setOrders(oData.orders);
+
+      if (Array.isArray(bData)) {
         setBills(bData);
         // Combine server cash requests with any unpaid bills marked cash
         const activeCashBills = bData.filter((b) => b.payment_method === "CASH" && b.status !== "PAID");
-        const mergedReqs = [...(cReqs || [])];
+        const mergedReqs = [...(Array.isArray(cReqs) ? cReqs : [])];
         for (const ac of activeCashBills) {
           if (!mergedReqs.some((r) => r.id === ac.id || r.bill_id === ac.id)) {
             mergedReqs.push({
@@ -144,14 +148,18 @@ function Admin({ onLogout }) {
           }
         }
         setCashRequests(mergedReqs);
-      } else if (cReqs) {
+      } else if (Array.isArray(cReqs)) {
         setCashRequests(cReqs);
       }
-      if (bkData) setBookings(bkData);
-      if (mData) setMenuItems(mData);
-      if (sData) setRestaurantSettings(sData);
-      if (stData) setStaffList(stData);
-      if (qrData) setRestaurantQrData(qrData);
+      if (Array.isArray(bkData)) setBookings(bkData);
+      else if (bkData?.bookings && Array.isArray(bkData.bookings)) setBookings(bkData.bookings);
+
+      if (Array.isArray(mData)) setMenuItems(mData);
+      else if (mData?.menu && Array.isArray(mData.menu)) setMenuItems(mData.menu);
+
+      if (sData && typeof sData === "object" && !Array.isArray(sData)) setRestaurantSettings(sData);
+      if (Array.isArray(stData)) setStaffList(stData);
+      if (qrData && typeof qrData === "object") setRestaurantQrData(qrData);
     } catch (err) {
       console.error("Admin fetch error:", err);
     } finally {
@@ -416,8 +424,9 @@ function Admin({ onLogout }) {
 
   // Filter Bookings
   const filteredBookings = useMemo(() => {
+    const safeBookings = Array.isArray(bookings) ? bookings : [];
     const today = new Date().toISOString().split("T")[0];
-    return bookings.filter((b) => {
+    return safeBookings.filter((b) => {
       if (bookingFilter === "TODAY") return b.booking_date === today;
       if (bookingFilter === "UPCOMING") return b.booking_date >= today && b.status === "CONFIRMED";
       if (bookingFilter === "COMPLETED") return b.status === "COMPLETED";
@@ -513,7 +522,7 @@ function Admin({ onLogout }) {
         </header>
 
         {/* REAL-TIME CASH PAYMENT REQUESTS BANNER (ADMIN ONLY CONFIRMATION) */}
-        {cashRequests && cashRequests.length > 0 && (
+        {Array.isArray(cashRequests) && cashRequests.length > 0 && (
           <section className="admin-cash-alerts-banner">
             <div className="cash-alert-headline">
               <div className="cash-alert-icon-wrap">
@@ -609,8 +618,8 @@ function Admin({ onLogout }) {
                 </div>
                 <div className="kpi-info">
                   <span>Restaurant Tables</span>
-                  <h3>{tables.length || 12}</h3>
-                  <small>{tables.filter((t) => t.status === "AVAILABLE").length} available now</small>
+                  <h3>{(Array.isArray(tables) ? tables : []).length || 12}</h3>
+                  <small>{(Array.isArray(tables) ? tables : []).filter((t) => t.status === "AVAILABLE").length} available now</small>
                 </div>
               </div>
             </div>
@@ -663,16 +672,17 @@ function Admin({ onLogout }) {
           <div className="tab-content floormap-tab">
             <div className="floormap-header-controls">
               <div className="floor-summary-chips">
-                <span className="chip available">🟢 Available ({tables.filter((t) => t.status === "AVAILABLE").length})</span>
-                <span className="chip reserved">🟡 Reserved ({tables.filter((t) => t.status === "RESERVED").length})</span>
-                <span className="chip occupied">🔴 Occupied ({tables.filter((t) => ["OCCUPIED", "ORDER_PLACED"].includes(t.status)).length})</span>
-                <span className="chip payment">💳 Payment Pending ({tables.filter((t) => t.status === "PAYMENT_PENDING").length})</span>
+                <span className="chip available">🟢 Available ({(Array.isArray(tables) ? tables : []).filter((t) => t.status === "AVAILABLE").length})</span>
+                <span className="chip reserved">🟡 Reserved ({(Array.isArray(tables) ? tables : []).filter((t) => t.status === "RESERVED").length})</span>
+                <span className="chip occupied">🔴 Occupied ({(Array.isArray(tables) ? tables : []).filter((t) => ["OCCUPIED", "ORDER_PLACED"].includes(t.status)).length})</span>
+                <span className="chip payment">💳 Payment Pending ({(Array.isArray(tables) ? tables : []).filter((t) => t.status === "PAYMENT_PENDING").length})</span>
               </div>
             </div>
 
             <div className="admin-floor-sections">
               {["Main Hall", "Window Side", "Outdoor Patio", "VIP Lounge"].map((secName) => {
-                const secTables = tables.filter((t) => t.section === secName);
+                const safeTbls = Array.isArray(tables) ? tables : [];
+                const secTables = safeTbls.filter((t) => t.section === secName);
 
                 return (
                   <div className="floor-section-group" key={secName}>
@@ -711,7 +721,7 @@ function Admin({ onLogout }) {
         {activeTab === "orders" && (
           <div className="tab-content orders-tab">
             <div className="orders-grid-display">
-              {orders.length === 0 ? (
+              {(!Array.isArray(orders) || orders.length === 0) ? (
                 <div className="empty-box">No orders recorded in the system.</div>
               ) : (
                 orders.map((ord) => (
@@ -810,7 +820,7 @@ function Admin({ onLogout }) {
                   </tr>
                 </thead>
                 <tbody>
-                  {bills.map((b) => (
+                  {(Array.isArray(bills) ? bills : []).map((b) => (
                     <tr key={b.id}>
                       <td>
                         <strong>#{b.bill_number}</strong>
@@ -933,7 +943,7 @@ function Admin({ onLogout }) {
         {activeTab === "menu" && (
           <div className="tab-content menu-tab">
             <div className="menu-mgmt-header">
-              <h3>Restaurant Dishes ({menuItems.length})</h3>
+              <h3>Restaurant Dishes ({Array.isArray(menuItems) ? menuItems.length : 0})</h3>
               <button
                 className="btn-add-dish"
                 onClick={() => {
@@ -967,7 +977,7 @@ function Admin({ onLogout }) {
                   </tr>
                 </thead>
                 <tbody>
-                  {menuItems.map((item) => (
+                  {(Array.isArray(menuItems) ? menuItems : []).map((item) => (
                     <tr key={item.id}>
                       <td>
                         <strong>{item.name}</strong>
@@ -1039,7 +1049,7 @@ function Admin({ onLogout }) {
                 <p>Click any table to generate and download its individual QR code.</p>
 
                 <div className="table-stands-selector">
-                  {tables.map((t) => (
+                  {(Array.isArray(tables) ? tables : []).map((t) => (
                     <button
                       key={t.id}
                       className={`table-qr-chip ${printableQrTable?.table?.id === t.id ? "active" : ""}`}
@@ -1096,7 +1106,7 @@ function Admin({ onLogout }) {
                   </tr>
                 </thead>
                 <tbody>
-                  {staffList.map((st, idx) => (
+                  {(Array.isArray(staffList) ? staffList : []).map((st, idx) => (
                     <tr key={st.id ? `staff-${st.id}-${st.username}` : `staff-${idx}`}>
                       <td>
                         <strong>{st.name}</strong>

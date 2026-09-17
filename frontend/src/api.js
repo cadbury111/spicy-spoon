@@ -226,14 +226,28 @@ async function request(endpoint, options = {}) {
       data = await response.json().catch(() => ({}));
     } else {
       const text = await response.text().catch(() => "");
+      const isHtml =
+        contentType.includes("text/html") ||
+        text.trim().startsWith("<!DOCTYPE") ||
+        text.trim().startsWith("<html") ||
+        text.trim().startsWith("<!doctype");
+      if (isHtml) {
+        console.warn(`[API] Received HTML fallback for ${endpoint}. Falling back to client-side data.`);
+        return handleClientFallback(endpoint, options);
+      }
       try {
         data = JSON.parse(text);
       } catch (e) {
-        data = { message: text ? text.slice(0, 300) : `Server responded with status ${response.status}` };
+        console.warn(`[API] Non-JSON response for ${endpoint}. Falling back to client-side data.`);
+        return handleClientFallback(endpoint, options);
       }
     }
 
     if (!response.ok) {
+      if (response.status === 404 || response.status === 502 || response.status === 504) {
+        console.warn(`[API] Status ${response.status} for ${endpoint}. Falling back to client-side data.`);
+        return handleClientFallback(endpoint, options);
+      }
       const error = new Error(data.message || `Request failed with status ${response.status}`);
       error.status = response.status;
       error.data = data;
@@ -243,7 +257,7 @@ async function request(endpoint, options = {}) {
     return data;
   } catch (netOrHttpErr) {
     clearTimeout(timeoutId);
-    if (netOrHttpErr.status) {
+    if (netOrHttpErr.status && netOrHttpErr.status !== 404 && netOrHttpErr.status !== 502 && netOrHttpErr.status !== 504) {
       throw netOrHttpErr;
     }
     const isTimeout = netOrHttpErr.name === "AbortError";
@@ -1135,11 +1149,30 @@ async function handleClientFallback(endpoint, options = {}, originalError) {
   return { message: "Success" };
 }
 
+function ensureArray(val, fallback = []) {
+  if (Array.isArray(val)) return val;
+  if (val && typeof val === "object") {
+    if (Array.isArray(val.tables)) return val.tables;
+    if (Array.isArray(val.orders)) return val.orders;
+    if (Array.isArray(val.bills)) return val.bills;
+    if (Array.isArray(val.bookings)) return val.bookings;
+    if (Array.isArray(val.menu)) return val.menu;
+    if (Array.isArray(val.items)) return val.items;
+  }
+  return fallback;
+}
+
 export const api = {
   // Staff Auth & RBAC
   staffLogin: (credentials) => request("/auth/login", { method: "POST", body: credentials }),
   getStaffMe: () => request("/auth/me"),
-  getStaffList: () => request("/auth/staff-list"),
+  getStaffList: async () => {
+    const res = await request("/auth/staff-list");
+    return ensureArray(res, [
+      { id: 1, name: "General Manager", username: "admin", role: "ADMIN", status: "ACTIVE" },
+      { id: 2, name: "Executive Chef", username: "kitchen", role: "KITCHEN", status: "ACTIVE" },
+    ]);
+  },
   createStaffUser: (userData) => request("/auth/staff", { method: "POST", body: userData }),
   toggleStaffStatus: (id, status) => request(`/auth/staff/${id}/status`, { method: "PUT", body: { status } }),
 
@@ -1149,42 +1182,49 @@ export const api = {
   // Restaurants & QR
   getRestaurant: (slug = "spicy-spoon") => request(`/restaurants/${slug}`),
   getRestaurantQr: (slug = "spicy-spoon") => request(`/restaurants/${slug}/qr`),
-  getRestaurantTables: (slug = "spicy-spoon", params = {}) => {
-    return request(`/restaurants/${slug}/tables${buildQueryString(params)}`);
+  getRestaurantTables: async (slug = "spicy-spoon", params = {}) => {
+    const res = await request(`/restaurants/${slug}/tables${buildQueryString(params)}`);
+    return ensureArray(res, INITIAL_DEMO_TABLES);
   },
-  getRestaurantTablesWithAvailability: (slug = "spicy-spoon", params = {}) => {
-    return request(`/restaurants/${slug}/tables${buildQueryString(params)}`);
+  getRestaurantTablesWithAvailability: async (slug = "spicy-spoon", params = {}) => {
+    const res = await request(`/restaurants/${slug}/tables${buildQueryString(params)}`);
+    return ensureArray(res, INITIAL_DEMO_TABLES);
   },
 
   // Tables
-  getTables: (params = {}) => {
-    return request(`/tables${buildQueryString(params)}`);
+  getTables: async (params = {}) => {
+    const res = await request(`/tables${buildQueryString(params)}`);
+    return ensureArray(res, INITIAL_DEMO_TABLES);
   },
   getTable: (id) => request(`/tables/${id}`),
   updateTableStatus: (id, data) => request(`/tables/${id}/status`, { method: "PUT", body: data }),
   createTable: (data) => request("/tables", { method: "POST", body: data }),
 
   // Bookings (Guest Table Reservation)
-  getBookings: (params = {}) => {
-    return request(`/bookings${buildQueryString(params)}`);
+  getBookings: async (params = {}) => {
+    const res = await request(`/bookings${buildQueryString(params)}`);
+    return ensureArray(res, INITIAL_DEMO_BOOKINGS);
   },
   createBooking: (data) => request("/bookings", { method: "POST", body: data }),
   updateBookingStatus: (id, status) => request(`/bookings/${id}/status`, { method: "PUT", body: { status } }),
 
   // Menu
-  getMenu: (params = {}) => {
-    return request(`/menu${buildQueryString(params)}`);
+  getMenu: async (params = {}) => {
+    const res = await request(`/menu${buildQueryString(params)}`);
+    return ensureArray(res, fallbackMenu);
   },
   getMenuItem: (id) => request(`/menu/${id}`),
   addMenuItem: (data) => request("/menu", { method: "POST", body: data }),
   updateMenuItem: (id, data) => request(`/menu/${id}`, { method: "PUT", body: data }),
 
   // Orders (Multi-Round Dining)
-  getOrders: (params = {}) => {
-    return request(`/orders${buildQueryString(params)}`);
+  getOrders: async (params = {}) => {
+    const res = await request(`/orders${buildQueryString(params)}`);
+    return ensureArray(res, INITIAL_DEMO_ORDERS);
   },
-  getActiveOrders: (params = {}) => {
-    return request(`/orders/active${buildQueryString(params)}`);
+  getActiveOrders: async (params = {}) => {
+    const res = await request(`/orders/active${buildQueryString(params)}`);
+    return ensureArray(res, []);
   },
   createOrder: (data) => request("/orders", { method: "POST", body: data }),
   updateOrderStatus: (id, status) => request(`/orders/${id}/status`, { method: "PUT", body: { status } }),
@@ -1196,8 +1236,9 @@ export const api = {
     return request(`/bills/live${buildQueryString(params)}`);
   },
   generateBill: (data) => request("/bills/generate", { method: "POST", body: data }),
-  getBills: (params = {}) => {
-    return request(`/bills${buildQueryString(params)}`);
+  getBills: async (params = {}) => {
+    const res = await request(`/bills${buildQueryString(params)}`);
+    return ensureArray(res, []);
   },
   getBill: (id) => request(`/bills/${id}`),
 
@@ -1207,7 +1248,10 @@ export const api = {
   verifyPayment: (data) => request("/payments/verify", { method: "POST", body: data }),
   confirmCashPayment: (data) => request("/payments/cash-confirm", { method: "POST", body: data }),
   declineCashPayment: (data) => request("/payments/cash-decline", { method: "POST", body: data }),
-  getCashRequests: () => request("/payments/cash-requests"),
+  getCashRequests: async () => {
+    const res = await request("/payments/cash-requests");
+    return ensureArray(res, []);
+  },
   getPayments: () => request("/payments"),
   getPayment: (id) => request(`/payments/${id}`),
   getPaymentByBill: (billId) => request(`/payments/by-bill/${billId}`),
