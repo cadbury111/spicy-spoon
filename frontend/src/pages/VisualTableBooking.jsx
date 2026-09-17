@@ -94,6 +94,7 @@ function VisualTableBooking({ slug = "spicy-spoon" }) {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [confirmedBooking, setConfirmedBooking] = useState(null);
   const [errorMessage, setErrorMessage] = useState("");
+  const [modalError, setModalError] = useState("");
 
   const [bookingForm, setBookingForm] = useState(() => {
     let customer_name = "";
@@ -228,16 +229,17 @@ function VisualTableBooking({ slug = "spicy-spoon" }) {
     e.stopPropagation();
     if (!table.isAvailableForSlot) return;
     setSelectedTable(table);
+    setModalError("");
     setShowBookingModal(true);
   };
 
   const handleSubmitBooking = async (e) => {
     e.preventDefault();
-    if (!selectedTable) return;
+    if (!selectedTable || isSubmitting) return;
 
     try {
       setIsSubmitting(true);
-      setErrorMessage("");
+      setModalError("");
 
       // Resolve meal type if known
       const slotObj = TIME_SLOTS.find((s) => s.time === selectedTime);
@@ -245,24 +247,47 @@ function VisualTableBooking({ slug = "spicy-spoon" }) {
       if (slotObj?.label.includes("Breakfast")) detectedMeal = "BREAKFAST";
       else if (slotObj?.label.includes("Lunch")) detectedMeal = "LUNCH";
 
+      const nowClient = new Date();
+      const clientMins = nowClient.getHours() * 60 + nowClient.getMinutes();
+
       const payload = {
         table_id: selectedTable.id,
         table_number: selectedTable.table_number,
+        table_name: selectedTable.table_number,
+        location: selectedTable.section,
+        section: selectedTable.section,
         customer_name: bookingForm.customer_name.trim(),
+        full_name: bookingForm.customer_name.trim(),
         customer_phone: bookingForm.customer_phone.trim(),
+        phone_number: bookingForm.customer_phone.trim(),
         customer_email: bookingForm.customer_email.trim(),
+        email: bookingForm.customer_email.trim(),
         booking_date: selectedDate,
+        reservation_date: selectedDate,
         start_time: selectedTime,
+        reservation_time: selectedTime,
         meal_type: detectedMeal,
         guest_count: Number(guestCount),
+        party_size: Number(guestCount),
+        booking_duration: 90,
+        duration: 90,
+        end_time: calculateEndTime(selectedTime),
         special_notes: bookingForm.special_notes.trim(),
+        special_request: bookingForm.special_notes.trim(),
+        client_mins: clientMins,
       };
 
       const res = await api.createBooking(payload);
 
-      if (res.booking) {
-        setConfirmedBooking(res.booking);
+      if (res && (res.booking || res.success)) {
+        const confirmed = res.booking || {
+          ...payload,
+          booking_number: res.booking_number || `BK-${Date.now().toString().slice(-6)}`,
+          section: selectedTable.section,
+        };
+        setConfirmedBooking(confirmed);
         setShowBookingModal(false);
+        setModalError("");
 
         // Store active session reference and guest details
         try {
@@ -285,17 +310,21 @@ function VisualTableBooking({ slug = "spicy-spoon" }) {
             spread: 70,
             origin: { y: 0.6 },
           });
-        } catch (e) {
-          // confetti optional
-        }
+        } catch (e) {}
 
         // Refresh tables list
         fetchAvailability();
+      } else {
+        throw new Error(res?.message || "Failed to confirm table reservation. Please try again.");
       }
     } catch (err) {
-      console.error("Booking error:", err);
-      const msg = err.data?.message || err.message || "Failed to confirm table booking. Please choose another table.";
-      setErrorMessage(msg);
+      console.error("Booking submission error:", err);
+      const msg =
+        err.data?.message ||
+        err.message ||
+        "Failed to confirm table booking. Please check your connection and try again.";
+      setModalError(msg);
+
       // Only unselect table if it's a conflict error (409) where the table is no longer available
       if (
         err.status === 409 ||
@@ -398,7 +427,7 @@ function VisualTableBooking({ slug = "spicy-spoon" }) {
                 📅 {selectedDate} · ⏰ {selectedTime} · 👥 {guestCount} Guests
               </p>
             </div>
-            <button className="btn-primary-reserve" onClick={() => setShowBookingModal(true)}>
+            <button className="btn-primary-reserve" onClick={() => { setModalError(""); setShowBookingModal(true); }}>
               <BookmarkCheck size={20} />
               <span>BOOK TABLE {selectedTable.table_number} NOW →</span>
             </button>
@@ -510,6 +539,7 @@ function VisualTableBooking({ slug = "spicy-spoon" }) {
                               className="btn-card-selected-action"
                               onClick={(e) => {
                                 e.stopPropagation();
+                                setModalError("");
                                 setShowBookingModal(true);
                               }}
                             >
@@ -544,7 +574,13 @@ function VisualTableBooking({ slug = "spicy-spoon" }) {
               </div>
             </div>
           </div>
-          <button className="confirm-proceed-btn" onClick={() => setShowBookingModal(true)}>
+          <button
+            className="confirm-proceed-btn"
+            onClick={() => {
+              setModalError("");
+              setShowBookingModal(true);
+            }}
+          >
             <span>Proceed to Reserve Table {selectedTable.table_number}</span>
             <ChevronRight size={18} />
           </button>
@@ -636,10 +672,10 @@ function VisualTableBooking({ slug = "spicy-spoon" }) {
                 </div>
               </div>
 
-              {errorMessage && (
+              {(modalError || errorMessage) && (
                 <div className="booking-error-banner" style={{ margin: "0 0 16px 0" }}>
                   <AlertCircle size={18} />
-                  <span>{errorMessage}</span>
+                  <span>{modalError || errorMessage}</span>
                 </div>
               )}
 

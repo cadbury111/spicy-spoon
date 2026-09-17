@@ -204,8 +204,16 @@ async function request(endpoint, options = {}) {
     config.body = JSON.stringify(config.body);
   }
 
+  // 15-second timeout to prevent requests from hanging indefinitely
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), 15000);
+  if (!config.signal) {
+    config.signal = controller.signal;
+  }
+
   try {
     const response = await fetch(url, config);
+    clearTimeout(timeoutId);
 
     if (response.status === 401 && endpoint.startsWith("/auth/me")) {
       localStorage.removeItem("spicy_staff_token");
@@ -213,11 +221,17 @@ async function request(endpoint, options = {}) {
     }
 
     const contentType = response.headers.get("content-type") || "";
-    if (!contentType.includes("application/json")) {
-      throw new Error(`Server returned non-JSON response (${response.status})`);
+    let data = {};
+    if (contentType.includes("application/json")) {
+      data = await response.json().catch(() => ({}));
+    } else {
+      const text = await response.text().catch(() => "");
+      try {
+        data = JSON.parse(text);
+      } catch (e) {
+        data = { message: text ? text.slice(0, 300) : `Server responded with status ${response.status}` };
+      }
     }
-
-    const data = await response.json().catch(() => ({}));
 
     if (!response.ok) {
       const error = new Error(data.message || `Request failed with status ${response.status}`);
@@ -228,12 +242,19 @@ async function request(endpoint, options = {}) {
 
     return data;
   } catch (netOrHttpErr) {
+    clearTimeout(timeoutId);
     if (netOrHttpErr.status) {
       throw netOrHttpErr;
     }
-    // Prevent client fallback from storing bookings in localStorage if running against a backend
+    const isTimeout = netOrHttpErr.name === "AbortError";
+    const failureMsg = isTimeout
+      ? "Booking request timed out. Please check your network or server connection."
+      : (netOrHttpErr.message || "Failed to reach reservation server. Please check your connection.");
+
     if (endpoint.startsWith("/bookings") && method === "POST") {
-      throw new Error(netOrHttpErr.message || "Failed to reach booking server. Please check your connection.", { cause: netOrHttpErr });
+      const error = new Error(failureMsg, { cause: netOrHttpErr });
+      error.data = { message: failureMsg };
+      throw error;
     }
     return handleClientFallback(endpoint, options, netOrHttpErr);
   }

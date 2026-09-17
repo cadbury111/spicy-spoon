@@ -19,9 +19,19 @@ const settingsRouter = require("./routes/settings");
 
 const app = express();
 
-// Support pre-parsed body from Vercel Serverless environment
+// Support pre-parsed body from Vercel Serverless environment (Object, String, or Buffer)
 app.use((req, res, next) => {
-  if (req.body && typeof req.body === "object" && !req._body) {
+  if (Buffer.isBuffer(req.body)) {
+    try {
+      req.body = JSON.parse(req.body.toString("utf8"));
+      req._body = true;
+    } catch (e) { }
+  } else if (typeof req.body === "string" && req.body.trim().startsWith("{")) {
+    try {
+      req.body = JSON.parse(req.body);
+      req._body = true;
+    } catch (e) { }
+  } else if (req.body && typeof req.body === "object" && !req._body) {
     req._body = true;
   }
   next();

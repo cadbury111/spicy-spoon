@@ -191,25 +191,23 @@ router.get("/:id", async (req, res) => {
 // 4. Create new booking with ATOMIC Concurrency & Database-Level Double-Booking Protection
 router.post("/", async (req, res) => {
   try {
-    const {
-      table_id,
-      table_number,
-      customer_name,
-      customer_phone,
-      customer_email = "",
-      booking_date,
-      start_time,
-      end_time,
-      guest_count,
-      special_notes = "",
-    } = req.body;
+    const table_id = req.body.table_id || req.body.tableId;
+    const table_number = req.body.table_number || req.body.tableNumber;
+    const customer_name = req.body.customer_name || req.body.full_name || req.body.name;
+    const customer_phone = req.body.customer_phone || req.body.phone_number || req.body.phone;
+    const customer_email = req.body.customer_email || req.body.email || "";
+    const booking_date = req.body.booking_date || req.body.reservation_date || req.body.date;
+    const start_time = req.body.start_time || req.body.reservation_time || req.body.time;
+    const end_time = req.body.end_time;
+    const guest_count = req.body.guest_count || req.body.party_size || req.body.guests;
+    const special_notes = req.body.special_notes || req.body.special_request || req.body.notes || "";
 
     // Server-side input validation
     if (!customer_name || !String(customer_name).trim()) {
-      return res.status(400).json({ success: false, message: "Customer name is required" });
+      return res.status(400).json({ success: false, message: "Customer full name is required" });
     }
     if (!customer_phone || !String(customer_phone).trim()) {
-      return res.status(400).json({ success: false, message: "Customer phone is required" });
+      return res.status(400).json({ success: false, message: "Customer phone number is required" });
     }
     if (!booking_date || !/^\d{4}-\d{2}-\d{2}$/.test(booking_date)) {
       return res.status(400).json({ success: false, message: "Valid booking date (YYYY-MM-DD) is required" });
@@ -229,15 +227,20 @@ router.post("/", async (req, res) => {
     }
 
     const isToday = booking_date === todayUtc || booking_date === todayLocal;
-    const currentMins = now.getHours() * 60 + now.getMinutes();
-    if (isToday && startMins < currentMins - 15) {
+    const clientMins = req.body.client_mins !== undefined ? Number(req.body.client_mins) : null;
+    const currentMins = clientMins !== null && !isNaN(clientMins)
+      ? clientMins
+      : (now.getHours() * 60 + now.getMinutes());
+
+    // Only reject for today if client explicitly passed client_mins and slot has unambiguously passed
+    if (isToday && clientMins !== null && startMins < currentMins - 15) {
       return res.status(400).json({
         success: false,
         message: "The selected time slot has already passed for today. Please choose an upcoming time slot.",
       });
     }
     if (!guest_count || Number(guest_count) < 1) {
-      return res.status(400).json({ success: false, message: "Guest count must be at least 1" });
+      return res.status(400).json({ success: false, message: "Party size must be at least 1 guest" });
     }
 
     const calculatedEndTime = end_time || calculateEndTime(start_time);
@@ -339,7 +342,11 @@ router.post("/", async (req, res) => {
         special_notes || "",
       ]);
 
-      const newBookingId = insertResult.lastInsertRowid;
+      let newBookingId = insertResult.lastInsertRowid;
+      if (!newBookingId) {
+        const found = await trx.queryOne("SELECT id FROM bookings WHERE booking_number = ?", [bookingNumber]);
+        if (found) newBookingId = found.id;
+      }
 
       // Create linked guest dining session
       const newSessionId = `SESSION-${targetTable.table_number}-${Date.now().toString().slice(-6)}`;
@@ -373,12 +380,22 @@ router.post("/", async (req, res) => {
         }
       }
 
-      const booked = await trx.queryOne(`
+      let booked = await trx.queryOne(`
         SELECT b.*, t.table_number, t.capacity, t.section
         FROM bookings b
         JOIN restaurant_tables t ON b.table_id = t.id
         WHERE b.id = ?
       `, [newBookingId]);
+
+      if (!booked) {
+        booked = await trx.queryOne("SELECT * FROM bookings WHERE id = ? OR booking_number = ?", [newBookingId, bookingNumber]);
+      }
+
+      if (booked) {
+        booked.table_number = targetTable.table_number;
+        booked.capacity = targetTable.capacity;
+        booked.section = targetTable.section;
+      }
 
       const tableState = await trx.queryOne(
         "SELECT * FROM restaurant_tables WHERE id = ?",

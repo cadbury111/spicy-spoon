@@ -11,7 +11,7 @@ module.exports = (req, res) => {
   }
 
   // Restore the original request path if rewritten by Vercel serverless engine
-  const matchedPath = req.headers["x-matched-path"] || req.headers["x-now-route-matches"];
+  const matchedPath = req.headers["x-matched-path"] || req.headers["x-forwarded-uri"] || req.headers["x-original-url"] || req.headers["x-now-route-matches"];
   if (matchedPath && !matchedPath.includes("index.js")) {
     const queryPart = req.url && req.url.includes("?") ? req.url.slice(req.url.indexOf("?")) : "";
     req.url = matchedPath + (matchedPath.includes("?") ? "" : queryPart);
