@@ -122,46 +122,35 @@ function Admin({ onLogout }) {
         api.getCashRequests().catch(() => []),
       ]);
 
-      if (aData && typeof aData === "object" && !Array.isArray(aData)) setAnalytics(aData);
-
-      const safeTables = Array.isArray(tData) ? tData : (tData?.tables && Array.isArray(tData.tables) ? tData.tables : []);
-      setTables(safeTables);
-
-      const safeOrders = Array.isArray(oData) ? oData : (oData?.orders && Array.isArray(oData.orders) ? oData.orders : []);
-      setOrders(safeOrders);
-
-      const safeBills = Array.isArray(bData) ? bData : (bData?.bills && Array.isArray(bData.bills) ? bData.bills : []);
-      setBills(safeBills);
-
-      const activeCashBills = safeBills.filter((b) => b.payment_method === "CASH" && b.status !== "PAID");
-      const safeCReqs = Array.isArray(cReqs) ? cReqs : (cReqs?.requests && Array.isArray(cReqs.requests) ? cReqs.requests : []);
-      const mergedReqs = [...safeCReqs];
-      for (const ac of activeCashBills) {
-        if (!mergedReqs.some((r) => r.id === ac.id || r.bill_id === ac.id)) {
-          mergedReqs.push({
-            id: ac.id,
-            bill_id: ac.id,
-            bill_number: ac.bill_number,
-            table_number: ac.table_number,
-            grand_total: ac.grand_total,
-            amount: ac.grand_total,
-            status: "CASH_PENDING",
-          });
+      if (aData) setAnalytics(aData);
+      if (tData) setTables(tData);
+      if (oData) setOrders(oData);
+      if (bData) {
+        setBills(bData);
+        // Combine server cash requests with any unpaid bills marked cash
+        const activeCashBills = bData.filter((b) => b.payment_method === "CASH" && b.status !== "PAID");
+        const mergedReqs = [...(cReqs || [])];
+        for (const ac of activeCashBills) {
+          if (!mergedReqs.some((r) => r.id === ac.id || r.bill_id === ac.id)) {
+            mergedReqs.push({
+              id: ac.id,
+              bill_id: ac.id,
+              bill_number: ac.bill_number,
+              table_number: ac.table_number,
+              grand_total: ac.grand_total,
+              amount: ac.grand_total,
+              status: "CASH_PENDING",
+            });
+          }
         }
+        setCashRequests(mergedReqs);
+      } else if (cReqs) {
+        setCashRequests(cReqs);
       }
-      setCashRequests(mergedReqs);
-
-      const safeBookings = Array.isArray(bkData) ? bkData : (bkData?.bookings && Array.isArray(bkData.bookings) ? bkData.bookings : []);
-      setBookings(safeBookings);
-
-      const safeMenuItems = Array.isArray(mData) ? mData : (mData?.menu && Array.isArray(mData.menu) ? mData.menu : []);
-      setMenuItems(safeMenuItems);
-
-      if (sData && typeof sData === "object" && !Array.isArray(sData)) setRestaurantSettings(sData);
-
-      const safeStaff = Array.isArray(stData) ? stData : (stData?.staff && Array.isArray(stData.staff) ? stData.staff : []);
-      setStaffList(safeStaff);
-
+      if (bkData) setBookings(bkData);
+      if (mData) setMenuItems(mData);
+      if (sData) setRestaurantSettings(sData);
+      if (stData) setStaffList(stData);
       if (qrData) setRestaurantQrData(qrData);
     } catch (err) {
       console.error("Admin fetch error:", err);
@@ -428,8 +417,7 @@ function Admin({ onLogout }) {
   // Filter Bookings
   const filteredBookings = useMemo(() => {
     const today = new Date().toISOString().split("T")[0];
-    const safeBks = Array.isArray(bookings) ? bookings : [];
-    return safeBks.filter((b) => {
+    return bookings.filter((b) => {
       if (bookingFilter === "TODAY") return b.booking_date === today;
       if (bookingFilter === "UPCOMING") return b.booking_date >= today && b.status === "CONFIRMED";
       if (bookingFilter === "COMPLETED") return b.status === "COMPLETED";
@@ -621,8 +609,8 @@ function Admin({ onLogout }) {
                 </div>
                 <div className="kpi-info">
                   <span>Restaurant Tables</span>
-                  <h3>{(Array.isArray(tables) ? tables : []).length || 12}</h3>
-                  <small>{(Array.isArray(tables) ? tables : []).filter((t) => t.status === "AVAILABLE").length} available now</small>
+                  <h3>{tables.length || 12}</h3>
+                  <small>{tables.filter((t) => t.status === "AVAILABLE").length} available now</small>
                 </div>
               </div>
             </div>
@@ -675,17 +663,16 @@ function Admin({ onLogout }) {
           <div className="tab-content floormap-tab">
             <div className="floormap-header-controls">
               <div className="floor-summary-chips">
-                <span className="chip available">🟢 Available ({(Array.isArray(tables) ? tables : []).filter((t) => t.status === "AVAILABLE").length})</span>
-                <span className="chip reserved">🟡 Reserved ({(Array.isArray(tables) ? tables : []).filter((t) => t.status === "RESERVED").length})</span>
-                <span className="chip occupied">🔴 Occupied ({(Array.isArray(tables) ? tables : []).filter((t) => ["OCCUPIED", "ORDER_PLACED"].includes(t.status)).length})</span>
-                <span className="chip payment">💳 Payment Pending ({(Array.isArray(tables) ? tables : []).filter((t) => t.status === "PAYMENT_PENDING").length})</span>
+                <span className="chip available">🟢 Available ({tables.filter((t) => t.status === "AVAILABLE").length})</span>
+                <span className="chip reserved">🟡 Reserved ({tables.filter((t) => t.status === "RESERVED").length})</span>
+                <span className="chip occupied">🔴 Occupied ({tables.filter((t) => ["OCCUPIED", "ORDER_PLACED"].includes(t.status)).length})</span>
+                <span className="chip payment">💳 Payment Pending ({tables.filter((t) => t.status === "PAYMENT_PENDING").length})</span>
               </div>
             </div>
 
             <div className="admin-floor-sections">
               {["Main Hall", "Window Side", "Outdoor Patio", "VIP Lounge"].map((secName) => {
-                const safeTbls = Array.isArray(tables) ? tables : [];
-                const secTables = safeTbls.filter((t) => t.section === secName);
+                const secTables = tables.filter((t) => t.section === secName);
 
                 return (
                   <div className="floor-section-group" key={secName}>

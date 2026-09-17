@@ -249,8 +249,7 @@ function CustomerMenu() {
 
   // Filtered Menu
   const filteredMenu = useMemo(() => {
-    const safeMenuList = Array.isArray(menuList) ? menuList : fallbackMenu;
-    return safeMenuList.filter((item) => {
+    return menuList.filter((item) => {
       if (selectedCategory !== "All") {
         const itemCat = (item.category || "").toLowerCase();
         if (itemCat !== selectedCategory.toLowerCase()) {

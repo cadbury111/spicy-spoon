@@ -191,8 +191,7 @@ function Waiter() {
   };
 
   const filteredMenuItems = useMemo(() => {
-    const safeItems = Array.isArray(menuItems) ? menuItems : [];
-    return safeItems.filter((i) => {
+    return menuItems.filter((i) => {
       if (selectedCategory !== "All" && i.category !== selectedCategory) return false;
       if (searchQuery.trim()) {
         return i.name.toLowerCase().includes(searchQuery.toLowerCase());
@@ -201,7 +200,7 @@ function Waiter() {
     });
   }, [menuItems, selectedCategory, searchQuery]);
 
-  const categories = ["All", ...new Set((Array.isArray(menuItems) ? menuItems : []).map((i) => i.category || "General"))];
+  const categories = ["All", ...new Set(menuItems.map((i) => i.category || "General"))];
   const orderTotal = orderCart.reduce((sum, item) => sum + item.price * item.quantity, 0);
 
   return (

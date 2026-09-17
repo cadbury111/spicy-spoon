@@ -1135,21 +1135,11 @@ async function handleClientFallback(endpoint, options = {}, originalError) {
   return { message: "Success" };
 }
 
-function ensureArray(res, key) {
-  if (Array.isArray(res)) return res;
-  if (res && key && Array.isArray(res[key])) return res[key];
-  if (res && Array.isArray(res.data)) return res.data;
-  return [];
-}
-
 export const api = {
   // Staff Auth & RBAC
   staffLogin: (credentials) => request("/auth/login", { method: "POST", body: credentials }),
   getStaffMe: () => request("/auth/me"),
-  getStaffList: async () => {
-    const res = await request("/auth/staff-list");
-    return ensureArray(res, "staff");
-  },
+  getStaffList: () => request("/auth/staff-list"),
   createStaffUser: (userData) => request("/auth/staff", { method: "POST", body: userData }),
   toggleStaffStatus: (id, status) => request(`/auth/staff/${id}/status`, { method: "PUT", body: { status } }),
 
@@ -1159,49 +1149,42 @@ export const api = {
   // Restaurants & QR
   getRestaurant: (slug = "spicy-spoon") => request(`/restaurants/${slug}`),
   getRestaurantQr: (slug = "spicy-spoon") => request(`/restaurants/${slug}/qr`),
-  getRestaurantTables: async (slug = "spicy-spoon", params = {}) => {
-    const res = await request(`/restaurants/${slug}/tables${buildQueryString(params)}`);
-    return ensureArray(res, "tables");
+  getRestaurantTables: (slug = "spicy-spoon", params = {}) => {
+    return request(`/restaurants/${slug}/tables${buildQueryString(params)}`);
   },
-  getRestaurantTablesWithAvailability: async (slug = "spicy-spoon", params = {}) => {
-    const res = await request(`/restaurants/${slug}/tables${buildQueryString(params)}`);
-    return ensureArray(res, "tables");
+  getRestaurantTablesWithAvailability: (slug = "spicy-spoon", params = {}) => {
+    return request(`/restaurants/${slug}/tables${buildQueryString(params)}`);
   },
 
   // Tables
-  getTables: async (params = {}) => {
-    const res = await request(`/tables${buildQueryString(params)}`);
-    return ensureArray(res, "tables");
+  getTables: (params = {}) => {
+    return request(`/tables${buildQueryString(params)}`);
   },
   getTable: (id) => request(`/tables/${id}`),
   updateTableStatus: (id, data) => request(`/tables/${id}/status`, { method: "PUT", body: data }),
   createTable: (data) => request("/tables", { method: "POST", body: data }),
 
   // Bookings (Guest Table Reservation)
-  getBookings: async (params = {}) => {
-    const res = await request(`/bookings${buildQueryString(params)}`);
-    return ensureArray(res, "bookings");
+  getBookings: (params = {}) => {
+    return request(`/bookings${buildQueryString(params)}`);
   },
   createBooking: (data) => request("/bookings", { method: "POST", body: data }),
   updateBookingStatus: (id, status) => request(`/bookings/${id}/status`, { method: "PUT", body: { status } }),
 
   // Menu
-  getMenu: async (params = {}) => {
-    const res = await request(`/menu${buildQueryString(params)}`);
-    return ensureArray(res, "menu");
+  getMenu: (params = {}) => {
+    return request(`/menu${buildQueryString(params)}`);
   },
   getMenuItem: (id) => request(`/menu/${id}`),
   addMenuItem: (data) => request("/menu", { method: "POST", body: data }),
   updateMenuItem: (id, data) => request(`/menu/${id}`, { method: "PUT", body: data }),
 
   // Orders (Multi-Round Dining)
-  getOrders: async (params = {}) => {
-    const res = await request(`/orders${buildQueryString(params)}`);
-    return ensureArray(res, "orders");
+  getOrders: (params = {}) => {
+    return request(`/orders${buildQueryString(params)}`);
   },
-  getActiveOrders: async (params = {}) => {
-    const res = await request(`/orders/active${buildQueryString(params)}`);
-    return ensureArray(res, "orders");
+  getActiveOrders: (params = {}) => {
+    return request(`/orders/active${buildQueryString(params)}`);
   },
   createOrder: (data) => request("/orders", { method: "POST", body: data }),
   updateOrderStatus: (id, status) => request(`/orders/${id}/status`, { method: "PUT", body: { status } }),
@@ -1213,9 +1196,8 @@ export const api = {
     return request(`/bills/live${buildQueryString(params)}`);
   },
   generateBill: (data) => request("/bills/generate", { method: "POST", body: data }),
-  getBills: async (params = {}) => {
-    const res = await request(`/bills${buildQueryString(params)}`);
-    return ensureArray(res, "bills");
+  getBills: (params = {}) => {
+    return request(`/bills${buildQueryString(params)}`);
   },
   getBill: (id) => request(`/bills/${id}`),
 
@@ -1225,10 +1207,7 @@ export const api = {
   verifyPayment: (data) => request("/payments/verify", { method: "POST", body: data }),
   confirmCashPayment: (data) => request("/payments/cash-confirm", { method: "POST", body: data }),
   declineCashPayment: (data) => request("/payments/cash-decline", { method: "POST", body: data }),
-  getCashRequests: async () => {
-    const res = await request("/payments/cash-requests");
-    return ensureArray(res, "requests");
-  },
+  getCashRequests: () => request("/payments/cash-requests"),
   getPayments: () => request("/payments"),
   getPayment: (id) => request(`/payments/${id}`),
   getPaymentByBill: (billId) => request(`/payments/by-bill/${billId}`),

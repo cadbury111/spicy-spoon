@@ -124,13 +124,12 @@ function VisualTableBooking({ slug = "spicy-spoon" }) {
         time: selectedTime,
         guests: guestCount,
       });
-      const safeData = Array.isArray(data) ? data : (data?.tables && Array.isArray(data.tables) ? data.tables : []);
-      setTables(safeData);
+      setTables(data || []);
 
       // If selected table is no longer available, unselect it
       setSelectedTable((currentSelected) => {
         if (!currentSelected) return null;
-        const updated = safeData.find((t) => t.id === currentSelected.id || t.table_number === currentSelected.table_number);
+        const updated = (data || []).find((t) => t.id === currentSelected.id || t.table_number === currentSelected.table_number);
         if (!updated || !updated.isAvailableForSlot) {
           return null;
         }
@@ -208,9 +207,8 @@ function VisualTableBooking({ slug = "spicy-spoon" }) {
   // Group tables by section
   const sectionTables = useMemo(() => {
     const grouped = {};
-    const safeTables = Array.isArray(tables) ? tables : [];
     for (const sec of SECTIONS) {
-      grouped[sec.name] = safeTables.filter((t) => t.section === sec.name);
+      grouped[sec.name] = tables.filter((t) => t.section === sec.name);
     }
     return grouped;
   }, [tables]);
@@ -343,8 +341,7 @@ function VisualTableBooking({ slug = "spicy-spoon" }) {
     }
   };
 
-  const safeTables = Array.isArray(tables) ? tables : [];
-  const availableCount = safeTables.filter((t) => t.isAvailableForSlot).length;
+  const availableCount = tables.filter((t) => t.isAvailableForSlot).length;
 
   return (
     <div className="table-booking-page">
@@ -498,7 +495,7 @@ function VisualTableBooking({ slug = "spicy-spoon" }) {
                       </div>
                     </div>
                     <span className="section-capacity-tag">
-                      {(Array.isArray(secTbls) ? secTbls : []).filter((t) => t.isAvailableForSlot).length} of {(Array.isArray(secTbls) ? secTbls : []).length} Available
+                      {secTbls.filter((t) => t.isAvailableForSlot).length} of {secTbls.length} Available
                     </span>
                   </div>
 
