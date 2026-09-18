@@ -330,21 +330,22 @@ function VisualTableBooking({ slug = "spicy-spoon" }) {
       }
     } catch (err) {
       console.error("Booking submission error:", err);
-      const msg =
-        err.data?.message ||
-        err.message ||
-        "Failed to confirm table booking. Please check your connection and try again.";
-      setModalError(msg);
-
-      // Only unselect table if it's a conflict error (409) where the table is no longer available
-      if (
+      const isConflict =
         err.status === 409 ||
         err.statusCode === 409 ||
-        msg.includes("already been booked") ||
-        msg.includes("just booked by another guest")
-      ) {
+        (err.data?.message && (err.data.message.includes("already") || err.data.message.includes("booked") || err.data.message.includes("conflict"))) ||
+        (err.message && (err.message.includes("already") || err.message.includes("booked") || err.message.includes("conflict")));
+
+      if (isConflict) {
+        const conflictMsg = "Sorry, this table has just been booked for this time. Please choose another table or time.";
+        setErrorMessage(conflictMsg);
+        setModalError(conflictMsg);
         setSelectedTable(null);
         setShowBookingModal(false);
+      } else {
+        const failMsg = err.data?.message || err.message || "Unable to confirm reservation. Please try again.";
+        setErrorMessage(failMsg);
+        setModalError(failMsg);
       }
       fetchAvailability(false);
     } finally {
@@ -709,7 +710,7 @@ function VisualTableBooking({ slug = "spicy-spoon" }) {
                 <button type="submit" className="btn-primary" disabled={isSubmitting}>
                   {isSubmitting ? (
                     <>
-                      <RefreshCw size={16} className="spin" /> Locking Table...
+                      <RefreshCw size={16} className="spin" /> Confirming...
                     </>
                   ) : (
                     <>
