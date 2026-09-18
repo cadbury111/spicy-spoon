@@ -3,6 +3,7 @@ const express = require("express");
 const cors = require("cors");
 const db = require("./db/database");
 const { initWebSocket } = require("./websocket");
+const { checkAndReleaseExpiredBookings } = require("./utils/bookingManager");
 
 const authRouter = require("./routes/auth");
 const sessionsRouter = require("./routes/sessions");
@@ -77,11 +78,33 @@ const routers = [
   { path: "/settings", router: settingsRouter },
 ];
 
+// On-demand checkout synchronization endpoint
+app.post(["/tables/sync-checkout", "/api/tables/sync-checkout", "/bookings/sync-checkout", "/api/bookings/sync-checkout"], async (req, res) => {
+  try {
+    const result = await checkAndReleaseExpiredBookings();
+    res.json({ success: true, ...result });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
 routers.forEach(({ path, router }) => {
   app.use(`/api/index.js${path}`, router);
   app.use(`/api${path}`, router);
   app.use(path, router);
 });
+
+// Periodic background auto-checkout engine (every 10 seconds)
+const autoCheckoutInterval = setInterval(async () => {
+  try {
+    await checkAndReleaseExpiredBookings();
+  } catch (err) {
+    console.error("Auto checkout timer error:", err);
+  }
+}, 10000);
+if (autoCheckoutInterval.unref) {
+  autoCheckoutInterval.unref();
+}
 
 // Error Handling Middleware
 app.use((err, req, res, next) => {

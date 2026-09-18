@@ -1204,3 +1204,41 @@
     justify-content: center;
   }
 }
+
+/* Enhanced Booked for this Time slot display */
+.booked-slot-pill {
+  display: flex !important;
+  flex-direction: column !important;
+  gap: 2px !important;
+  padding: 4px 8px !important;
+  background: rgba(239, 68, 68, 0.25) !important;
+  border: 1px solid rgba(239, 68, 68, 0.6) !important;
+  color: #fca5a5 !important;
+  border-radius: 8px !important;
+  font-size: 0.68rem !important;
+  line-height: 1.2 !important;
+  text-align: center !important;
+  margin-top: 6px !important;
+  box-shadow: 0 2px 8px rgba(239, 68, 68, 0.2) !important;
+}
+
+.booked-badge-txt {
+  font-weight: 800 !important;
+  color: #f87171 !important;
+  text-transform: uppercase !important;
+  letter-spacing: 0.5px !important;
+  font-size: 0.65rem !important;
+}
+
+.booked-time-slot {
+  font-weight: 700 !important;
+  color: #ffffff !important;
+  font-size: 0.7rem !important;
+  white-space: nowrap !important;
+}
+
+.restaurant-table-box.reserved {
+  border-color: rgba(239, 68, 68, 0.45) !important;
+  background: linear-gradient(145deg, #1c130e, #23120b) !important;
+}
+

@@ -274,6 +274,46 @@ async function request(endpoint, options = {}) {
   }
 }
 
+function timeToMinutesDemo(timeStr) {
+  if (!timeStr) return 0;
+  const match12 = timeStr.trim().match(/^(\d{1,2}):(\d{2})\s*(AM|PM)$/i);
+  if (match12) {
+    let hours = parseInt(match12[1], 10);
+    const minutes = parseInt(match12[2], 10);
+    const period = match12[3].toUpperCase();
+    if (period === "PM" && hours !== 12) hours += 12;
+    if (period === "AM" && hours === 12) hours = 0;
+    return hours * 60 + minutes;
+  }
+  const match24 = timeStr.trim().match(/^(\d{1,2}):(\d{2})$/);
+  if (match24) {
+    const hours = parseInt(match24[1], 10);
+    const minutes = parseInt(match24[2], 10);
+    if (hours >= 0 && hours < 24 && minutes >= 0 && minutes < 60) {
+      return hours * 60 + minutes;
+    }
+  }
+  return 0;
+}
+
+function calculateEndTimeDemo(startTimeStr) {
+  const startMin = timeToMinutesDemo(startTimeStr);
+  const endMin = startMin + 90;
+  const endH = Math.floor(endMin / 60) % 24;
+  const endM = endMin % 60;
+  const period = endH >= 12 ? "PM" : "AM";
+  const displayH = endH % 12 === 0 ? 12 : endH % 12;
+  return `${String(displayH).padStart(2, "0")}:${String(endM).padStart(2, "0")} ${period}`;
+}
+
+function hasTimeOverlapDemo(start1, end1, start2, end2) {
+  const s1 = timeToMinutesDemo(start1);
+  const e1 = timeToMinutesDemo(end1);
+  const s2 = timeToMinutesDemo(start2);
+  const e2 = timeToMinutesDemo(end2);
+  return Math.max(s1, s2) < Math.min(e1, e2);
+}
+
 // Complete Client-side Engine for Seamless Hosted & Offline Execution
 async function handleClientFallback(endpoint, options = {}, originalError) {
   const method = (options.method || "GET").toUpperCase();
@@ -287,41 +327,79 @@ async function handleClientFallback(endpoint, options = {}, originalError) {
     setLocalDemoData("spicy_demo_tables", tables);
   }
 
+  let savedBookings = getLocalDemoData("spicy_demo_bookings", INITIAL_DEMO_BOOKINGS);
+
+  // Auto-checkout check in client fallback
+  const nowDemo = new Date();
+  const todayDemo = nowDemo.toISOString().split("T")[0];
+  const currentMinsDemo = nowDemo.getHours() * 60 + nowDemo.getMinutes();
+
+  let bookingsChanged = false;
+  savedBookings = savedBookings.map((b) => {
+    if (b.status === "CONFIRMED" || b.status === "CHECKED_IN") {
+      const isPastDate = b.booking_date < todayDemo;
+      const endMins = timeToMinutesDemo(b.end_time || calculateEndTimeDemo(b.start_time));
+      if (isPastDate || (b.booking_date === todayDemo && currentMinsDemo >= endMins)) {
+        bookingsChanged = true;
+        return { ...b, status: "COMPLETED" };
+      }
+    }
+    return b;
+  });
+
+  if (bookingsChanged) {
+    setLocalDemoData("spicy_demo_bookings", savedBookings);
+    const completedIds = new Set(savedBookings.filter((b) => b.status === "COMPLETED").map((b) => b.id));
+    tables = tables.map((t) => {
+      if (t.current_booking_id && completedIds.has(t.current_booking_id)) {
+        return { ...t, status: "AVAILABLE", current_booking_id: null, current_session_id: null };
+      }
+      return t;
+    });
+    setLocalDemoData("spicy_demo_tables", tables);
+  }
+
   // 1. TABLES
   if (endpoint.includes("/tables") || endpoint.startsWith("/tables")) {
     if (method === "GET") {
       const urlObj = new URL(`http://dummy${endpoint}`);
       const guests = parseInt(urlObj.searchParams.get("guests") || "2", 10);
-      const date = urlObj.searchParams.get("date") || new Date().toISOString().split("T")[0];
+      const date = urlObj.searchParams.get("date") || todayDemo;
       const time = urlObj.searchParams.get("time") || "07:30 PM";
-
-      const savedBookings = getLocalDemoData("spicy_demo_bookings", INITIAL_DEMO_BOOKINGS);
-      const savedOrders = getLocalDemoData("spicy_demo_orders", INITIAL_DEMO_ORDERS);
+      const reqEndTime = calculateEndTimeDemo(time);
 
       return tables.map((t) => {
         const fitsCapacity = t.capacity >= guests;
-        const isBooked = savedBookings.some(
-          (b) => (b.table_id === t.id || b.table_number === t.table_number) &&
-                 b.booking_date === date &&
-                 b.start_time === time &&
-                 b.status !== "CANCELLED"
+        const bookedMatch = savedBookings.find(
+          (b) =>
+            (b.table_id === t.id || b.table_number === t.table_number) &&
+            b.booking_date === date &&
+            b.status !== "CANCELLED" &&
+            b.status !== "COMPLETED" &&
+            hasTimeOverlapDemo(time, reqEndTime, b.start_time, b.end_time || calculateEndTimeDemo(b.start_time))
         );
-
+        const isBooked = Boolean(bookedMatch);
         const isAvailableForSlot = fitsCapacity && !isBooked;
+
+        const bookedTimeSlot = isBooked
+          ? `${bookedMatch.start_time} – ${bookedMatch.end_time || calculateEndTimeDemo(bookedMatch.start_time)}`
+          : null;
 
         return {
           ...t,
-          status: isBooked ? "RESERVED" : "AVAILABLE",
+          status: isBooked ? "RESERVED" : (t.status || "AVAILABLE"),
           slotStatus: isBooked ? "RESERVED" : "AVAILABLE",
           restaurant_id: 1,
           isAvailableForSlot,
           fitsRequestedGuests: fitsCapacity,
           isSlotAvailable: !isBooked,
-          conflictReason: !fitsCapacity
-            ? `Capacity is ${t.capacity} (requires ${guests})`
-            : isBooked
-            ? "Already booked for this slot"
-            : null,
+          booked_time_slot: bookedTimeSlot,
+          booked_start: bookedMatch?.start_time || null,
+          booked_end: bookedMatch?.end_time || null,
+          checkout_time: bookedMatch?.end_time || null,
+          conflictReason: isBooked
+            ? `Booked for this time: ${bookedTimeSlot}`
+            : (!fitsCapacity ? `Capacity is ${t.capacity} (requires ${guests})` : null),
         };
       });
     }
@@ -342,27 +420,28 @@ async function handleClientFallback(endpoint, options = {}, originalError) {
 
   // 2. BOOKINGS
   if (endpoint.startsWith("/bookings")) {
-    let bookings = getLocalDemoData("spicy_demo_bookings", INITIAL_DEMO_BOOKINGS);
-
     if (method === "GET") {
-      return bookings;
+      return savedBookings;
     }
 
     if (method === "POST") {
       const tableId = body.table_id || 1;
       const table = tables.find((t) => t.id === tableId || t.table_number === body.table_number) || tables[0];
+      const startT = body.start_time || "07:30 PM";
+      const endT = body.end_time || calculateEndTimeDemo(startT);
 
       // Atomic double-booking concurrency check:
-      const hasOverlap = bookings.some(
+      const hasOverlap = savedBookings.some(
         (b) =>
           (b.table_id === table.id || b.table_number === table.table_number) &&
           b.booking_date === body.booking_date &&
-          b.start_time === body.start_time &&
-          b.status !== "CANCELLED"
+          b.status !== "CANCELLED" &&
+          b.status !== "COMPLETED" &&
+          hasTimeOverlapDemo(startT, endT, b.start_time, b.end_time || calculateEndTimeDemo(b.start_time))
       );
 
       if (hasOverlap) {
-        const error = new Error(`Sorry, Table ${table.table_number} was just reserved for ${body.start_time}. Please select another table.`);
+        const error = new Error(`Sorry, Table ${table.table_number} was just reserved for ${startT}. Please select another table.`);
         error.status = 409;
         throw error;
       }

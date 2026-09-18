@@ -704,7 +704,23 @@ function Admin({ onLogout }) {
                           </div>
                           <div className="tbl-card-body">
                             <p className="tbl-cap">👥 {tbl.capacity} Seats</p>
-                            {tbl.booking_customer && <p className="tbl-guest-name">📅 {tbl.booking_customer}</p>}
+                            {tbl.booking_customer && (
+                              <div className="tbl-card-booking-info">
+                                <p className="tbl-guest-name">👤 {tbl.booking_customer}</p>
+                                <p className="tbl-booked-time">
+                                  📅 <strong>{tbl.booked_time_slot || (tbl.booking_start ? `${tbl.booking_start} – ${tbl.booking_end}` : "Reserved")}</strong>
+                                </p>
+                                {tbl.checkout_time && (
+                                  <small className="tbl-checkout-pill">Checkout: {tbl.checkout_time}</small>
+                                )}
+                              </div>
+                            )}
+                            {tbl.upcoming_reservation && !tbl.booking_customer && (
+                              <div className="tbl-card-upcoming-info">
+                                <p className="tbl-upcoming-tag">⏰ Next: {tbl.upcoming_reservation.start_time}</p>
+                                <small>({tbl.upcoming_reservation.customer})</small>
+                              </div>
+                            )}
                             {tbl.order_number && <p className="tbl-order-tag">🍽️ Order #{tbl.order_number}</p>}
                           </div>
                         </div>
@@ -897,7 +913,12 @@ function Admin({ onLogout }) {
                       <td>{bk.customer_name}</td>
                       <td>{bk.customer_phone}</td>
                       <td>{bk.booking_date}</td>
-                      <td>{bk.start_time}</td>
+                      <td>
+                        <div className="bk-time-cell">
+                          <strong>{bk.start_time} – {bk.end_time || bk.start_time}</strong>
+                          {bk.end_time && <small className="bk-checkout-tag">Checkout: {bk.end_time}</small>}
+                        </div>
+                      </td>
                       <td>👥 {bk.guest_count}</td>
                       <td>{bk.table_number}</td>
                       <td>
@@ -913,12 +934,13 @@ function Admin({ onLogout }) {
                               Check In
                             </button>
                           )}
-                          {bk.status === "CHECKED_IN" && (
+                          {["CONFIRMED", "CHECKED_IN"].includes(bk.status) && (
                             <button
                               className="btn-action complete"
                               onClick={() => handleUpdateBookingStatus(bk.id, "COMPLETED")}
+                              title="Check out & release table"
                             >
-                              Complete
+                              Check Out
                             </button>
                           )}
                           {["CONFIRMED", "CHECKED_IN"].includes(bk.status) && (
@@ -1300,10 +1322,19 @@ function Admin({ onLogout }) {
               </div>
 
               {selectedTable.booking_customer && (
-                <div className="tbl-info-block">
-                  <h4>Active Reservation</h4>
+                <div className="tbl-info-block reservation-block">
+                  <h4>Active / Scheduled Reservation</h4>
                   <p>Customer: <strong>{selectedTable.booking_customer}</strong></p>
+                  {selectedTable.booking_phone && <p>Phone: <strong>{selectedTable.booking_phone}</strong></p>}
                   <p>Booking ID: #{selectedTable.booking_number}</p>
+                  {selectedTable.booking_start && (
+                    <p>Reserved Time: <strong>{selectedTable.booking_start} – {selectedTable.booking_end}</strong></p>
+                  )}
+                  {selectedTable.checkout_time && (
+                    <p className="checkout-info-txt">
+                      ⏰ Scheduled Checkout: <strong>{selectedTable.checkout_time}</strong> (Auto-releases to AVAILABLE)
+                    </p>
+                  )}
                 </div>
               )}
 

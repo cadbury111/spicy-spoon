@@ -4,38 +4,12 @@ const db = require("../db/database");
 const QRCode = require("qrcode");
 const { broadcast } = require("../websocket");
 const { verifyStaffAuth } = require("../middleware/auth");
-
-// Helper to convert 12hr time format "07:30 PM" to minutes from midnight
-function timeToMinutes(timeStr) {
-  if (!timeStr) return 0;
-  const match = timeStr.trim().match(/^(\d{1,2}):(\d{2})\s*(AM|PM)$/i);
-  if (!match) return 0;
-  let hours = parseInt(match[1], 10);
-  const minutes = parseInt(match[2], 10);
-  const period = match[3].toUpperCase();
-  if (period === "PM" && hours !== 12) hours += 12;
-  if (period === "AM" && hours === 12) hours = 0;
-  return hours * 60 + minutes;
-}
-
-function calculateEndTime(startTimeStr) {
-  const startMin = timeToMinutes(startTimeStr);
-  const endMin = startMin + 90;
-  const endH = Math.floor(endMin / 60) % 24;
-  const endM = endMin % 60;
-  const period = endH >= 12 ? "PM" : "AM";
-  const displayH = endH % 12 === 0 ? 12 : endH % 12;
-  return `${String(displayH).padStart(2, "0")}:${String(endM).padStart(2, "0")} ${period}`;
-}
-
-// Check time overlap
-function hasTimeOverlap(start1, end1, start2, end2) {
-  const s1 = timeToMinutes(start1);
-  const e1 = timeToMinutes(end1);
-  const s2 = timeToMinutes(start2);
-  const e2 = timeToMinutes(end2);
-  return Math.max(s1, s2) < Math.min(e1, e2);
-}
+const {
+  timeToMinutes,
+  calculateEndTime,
+  hasTimeOverlap,
+  checkAndReleaseExpiredBookings,
+} = require("../utils/bookingManager");
 
 function setNoCacheHeaders(res) {
   res.set({
@@ -145,6 +119,7 @@ router.post("/:slug/qr/regenerate", verifyStaffAuth(["ADMIN"]), async (req, res)
 router.get("/:slug/tables", async (req, res) => {
   try {
     setNoCacheHeaders(res);
+    await checkAndReleaseExpiredBookings();
     const { date, time, guests } = req.query;
 
     const tables = await db.query(`
@@ -184,6 +159,9 @@ router.get("/:slug/tables", async (req, res) => {
       let isAvailableForSlot = true;
       let slotStatus = "AVAILABLE";
       let conflictReason = null;
+      let bookedStart = null;
+      let bookedEnd = null;
+      let bookedCustomer = null;
 
       // Check capacity
       if (guests && t.capacity < Number(guests)) {
@@ -199,7 +177,10 @@ router.get("/:slug/tables", async (req, res) => {
           if (hasTimeOverlap(time, requestedEndTime, bk.start_time, bk.end_time)) {
             isAvailableForSlot = false;
             slotStatus = "RESERVED";
-            conflictReason = `Booked from ${bk.start_time} to ${bk.end_time} (${bk.customer_name})`;
+            conflictReason = `Booked for this time: ${bk.start_time} – ${bk.end_time}`;
+            bookedStart = bk.start_time;
+            bookedEnd = bk.end_time;
+            bookedCustomer = bk.customer_name;
             break;
           }
         }
@@ -210,6 +191,11 @@ router.get("/:slug/tables", async (req, res) => {
         slotStatus,
         isAvailableForSlot,
         conflictReason,
+        booked_start: bookedStart,
+        booked_end: bookedEnd,
+        checkout_time: bookedEnd,
+        booked_time_slot: bookedStart && bookedEnd ? `${bookedStart} – ${bookedEnd}` : null,
+        booked_customer: bookedCustomer,
       };
     });
 

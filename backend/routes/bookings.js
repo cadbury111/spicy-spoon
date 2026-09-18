@@ -3,42 +3,16 @@ const router = express.Router();
 const db = require("../db/database");
 const { broadcast } = require("../websocket");
 const { verifyStaffAuth } = require("../middleware/auth");
+const {
+  timeToMinutes,
+  calculateEndTime,
+  hasTimeOverlap,
+  checkAndReleaseExpiredBookings,
+} = require("../utils/bookingManager");
 
 function generateBookingNumber() {
   const randomNum = Math.floor(100000 + Math.random() * 900000);
   return `BK-${randomNum}`;
-}
-
-function timeToMinutes(timeStr) {
-  if (!timeStr || typeof timeStr !== "string") return null;
-  const match12 = timeStr.trim().match(/^(\d{1,2}):(\d{2})\s*(AM|PM)$/i);
-  if (match12) {
-    let hours = parseInt(match12[1], 10);
-    const minutes = parseInt(match12[2], 10);
-    const period = match12[3].toUpperCase();
-    if (period === "PM" && hours !== 12) hours += 12;
-    if (period === "AM" && hours === 12) hours = 0;
-    return hours * 60 + minutes;
-  }
-  const match24 = timeStr.trim().match(/^(\d{1,2}):(\d{2})$/);
-  if (match24) {
-    const hours = parseInt(match24[1], 10);
-    const minutes = parseInt(match24[2], 10);
-    if (hours >= 0 && hours < 24 && minutes >= 0 && minutes < 60) {
-      return hours * 60 + minutes;
-    }
-  }
-  return null;
-}
-
-function calculateEndTime(startTimeStr) {
-  const startMin = timeToMinutes(startTimeStr) ?? 0;
-  const endMin = startMin + 90;
-  const endH = Math.floor(endMin / 60) % 24;
-  const endM = endMin % 60;
-  const period = endH >= 12 ? "PM" : "AM";
-  const displayH = endH % 12 === 0 ? 12 : endH % 12;
-  return `${String(displayH).padStart(2, "0")}:${String(endM).padStart(2, "0")} ${period}`;
 }
 
 function determineMealType(timeStr) {
@@ -46,14 +20,6 @@ function determineMealType(timeStr) {
   if (mins >= 360 && mins <= 690) return "BREAKFAST"; // 06:00 AM - 11:30 AM
   if (mins > 690 && mins < 1020) return "LUNCH";     // 11:31 AM - 04:59 PM
   return "DINNER";                                   // 05:00 PM onwards
-}
-
-function hasTimeOverlap(start1, end1, start2, end2) {
-  const s1 = timeToMinutes(start1) ?? 0;
-  const e1 = timeToMinutes(end1) ?? 0;
-  const s2 = timeToMinutes(start2) ?? 0;
-  const e2 = timeToMinutes(end2) ?? 0;
-  return Math.max(s1, s2) < Math.min(e1, e2);
 }
 
 // Middleware to prevent stale HTTP caching on booking endpoints
@@ -70,6 +36,7 @@ function setNoCacheHeaders(res) {
 router.get("/", async (req, res) => {
   try {
     setNoCacheHeaders(res);
+    await checkAndReleaseExpiredBookings();
     const { date, status, table_id } = req.query;
     let queryStr = `
       SELECT 
@@ -110,6 +77,7 @@ router.get("/", async (req, res) => {
 router.get("/availability/check", async (req, res) => {
   try {
     setNoCacheHeaders(res);
+    await checkAndReleaseExpiredBookings();
     const { date, time, guests } = req.query;
     if (!date || !time) {
       return res.status(400).json({ message: "date and time are required" });
@@ -137,7 +105,7 @@ router.get("/availability/check", async (req, res) => {
         for (const bk of tableBookings) {
           if (hasTimeOverlap(time, calculatedEndTime, bk.start_time, bk.end_time)) {
             isAvailable = false;
-            reason = `Booked from ${bk.start_time} to ${bk.end_time}`;
+            reason = `Booked for this time: ${bk.start_time} – ${bk.end_time}`;
             break;
           }
         }
@@ -191,6 +159,7 @@ router.get("/:id", async (req, res) => {
 // 4. Create new booking with ATOMIC Concurrency & Database-Level Double-Booking Protection
 router.post("/", async (req, res) => {
   try {
+    await checkAndReleaseExpiredBookings();
     const table_id = req.body.table_id || req.body.tableId;
     const table_number = req.body.table_number || req.body.tableNumber;
     const customer_name = req.body.customer_name || req.body.full_name || req.body.name;
@@ -413,11 +382,16 @@ router.post("/", async (req, res) => {
       bookingNumber: createdBooking.booking_number,
       bookingDate: createdBooking.booking_date,
       bookingTime: createdBooking.start_time,
+      startTime: createdBooking.start_time,
       endTime: createdBooking.end_time,
+      checkoutTime: createdBooking.end_time,
+      bookedTimeSlot: `${createdBooking.start_time} – ${createdBooking.end_time}`,
       mealType: createdBooking.meal_type || mealType,
       guestCount: createdBooking.guest_count,
       bookingStatus: createdBooking.status,
+      customerName: createdBooking.customer_name,
       booking: createdBooking,
+      table: updatedTable,
       sessionId,
     });
     broadcast("NEW_BOOKING", createdBooking);
@@ -493,9 +467,10 @@ router.put("/:id/status", verifyStaffAuth(["ADMIN"]), async (req, res) => {
     } else if (["CANCELLED", "COMPLETED", "NO_SHOW"].includes(status)) {
       await db.execute(`
         UPDATE restaurant_tables 
-        SET status = 'AVAILABLE', current_booking_id = NULL
-        WHERE id = ? AND current_booking_id = ?
-      `, [booking.table_id, booking.id]);
+        SET status = CASE WHEN status = 'RESERVED' THEN 'AVAILABLE' ELSE status END,
+            current_booking_id = CASE WHEN current_booking_id = ? THEN NULL ELSE current_booking_id END
+        WHERE id = ?
+      `, [booking.id, booking.table_id]);
     }
 
     const updatedBooking = await db.queryOne(`

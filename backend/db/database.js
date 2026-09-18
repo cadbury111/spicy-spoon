@@ -700,7 +700,7 @@ async function initSchema() {
     safeAddColumn("payments", "gateway_reference", "TEXT");
     safeAddColumn("payments", "signature_verified", "INTEGER DEFAULT 0");
     safeAddColumn("bookings", "meal_type", "TEXT DEFAULT 'DINNER'");
-    safeAddColumn("bookings", "updated_at", "DATETIME DEFAULT CURRENT_TIMESTAMP");
+    safeAddColumn("bookings", "updated_at", "DATETIME");
 
     // Seeds
     const staffCount = sqliteDb.prepare("SELECT COUNT(*) as count FROM staff_users").get().count;

@@ -1587,3 +1587,91 @@
   color: #ffffff;
 }
 
+/* Floor Map Booked Time Slot & Checkout Tags */
+.tbl-card-booking-info {
+  margin-top: 4px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.tbl-card-booking-info .tbl-guest-name {
+  margin: 0;
+  font-weight: 700;
+  color: #fbbf24;
+  font-size: 0.8rem;
+}
+
+.tbl-booked-time {
+  margin: 0;
+  font-size: 0.75rem;
+  color: #fef08a;
+  background: rgba(245, 158, 11, 0.15);
+  border: 1px solid rgba(245, 158, 11, 0.35);
+  padding: 2px 6px;
+  border-radius: 5px;
+  width: fit-content;
+}
+
+.tbl-checkout-pill {
+  font-size: 0.68rem;
+  color: #94a3b8;
+  background: rgba(148, 163, 184, 0.1);
+  padding: 1px 5px;
+  border-radius: 4px;
+  width: fit-content;
+  margin-top: 1px;
+}
+
+.tbl-card-upcoming-info {
+  margin-top: 3px;
+  font-size: 0.72rem;
+  color: #60a5fa;
+  background: rgba(96, 165, 250, 0.1);
+  padding: 2px 6px;
+  border-radius: 4px;
+  border-left: 2px solid #3b82f6;
+}
+
+.tbl-upcoming-tag {
+  margin: 0;
+  font-weight: 700;
+}
+
+/* Bookings Table Time Cell */
+.bk-time-cell {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.bk-time-cell strong {
+  font-size: 0.85rem;
+  color: #ffffff;
+}
+
+.bk-checkout-tag {
+  font-size: 0.72rem;
+  color: #fbbf24;
+  background: rgba(245, 158, 11, 0.15);
+  border: 1px solid rgba(245, 158, 11, 0.3);
+  padding: 1px 5px;
+  border-radius: 4px;
+  width: fit-content;
+}
+
+/* Modal Reservation Block */
+.reservation-block {
+  border-left: 3px solid #f59e0b;
+}
+
+.checkout-info-txt {
+  color: #fbbf24 !important;
+  font-weight: 600;
+  background: rgba(245, 158, 11, 0.12);
+  padding: 4px 8px;
+  border-radius: 6px;
+  margin-top: 6px !important;
+}
+
+

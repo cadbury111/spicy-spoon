@@ -3,36 +3,12 @@ const router = express.Router();
 const db = require("../db/database");
 const { broadcast } = require("../websocket");
 const { verifyStaffAuth } = require("../middleware/auth");
-
-function timeToMinutes(timeStr) {
-  if (!timeStr) return 0;
-  const match = timeStr.trim().match(/^(\d{1,2}):(\d{2})\s*(AM|PM)$/i);
-  if (!match) return 0;
-  let hours = parseInt(match[1], 10);
-  const minutes = parseInt(match[2], 10);
-  const period = match[3].toUpperCase();
-  if (period === "PM" && hours !== 12) hours += 12;
-  if (period === "AM" && hours === 12) hours = 0;
-  return hours * 60 + minutes;
-}
-
-function calculateEndTime(startTimeStr) {
-  const startMin = timeToMinutes(startTimeStr);
-  const endMin = startMin + 90;
-  const endH = Math.floor(endMin / 60) % 24;
-  const endM = endMin % 60;
-  const period = endH >= 12 ? "PM" : "AM";
-  const displayH = endH % 12 === 0 ? 12 : endH % 12;
-  return `${String(displayH).padStart(2, "0")}:${String(endM).padStart(2, "0")} ${period}`;
-}
-
-function hasTimeOverlap(start1, end1, start2, end2) {
-  const s1 = timeToMinutes(start1);
-  const e1 = timeToMinutes(end1);
-  const s2 = timeToMinutes(start2);
-  const e2 = timeToMinutes(end2);
-  return Math.max(s1, s2) < Math.min(e1, e2);
-}
+const {
+  timeToMinutes,
+  calculateEndTime,
+  hasTimeOverlap,
+  checkAndReleaseExpiredBookings,
+} = require("../utils/bookingManager");
 
 function setNoCacheHeaders(res) {
   res.set({
@@ -47,7 +23,14 @@ function setNoCacheHeaders(res) {
 router.get("/", async (req, res) => {
   try {
     setNoCacheHeaders(res);
+    await checkAndReleaseExpiredBookings();
     const { date, time, guests, section } = req.query;
+
+    const now = new Date();
+    const todayLocal = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
+    const todayUtc = now.toISOString().split("T")[0];
+    const currentMins = now.getHours() * 60 + now.getMinutes();
+    const targetDate = (date && date !== "undefined" && date !== "null") ? date : todayLocal;
 
     let queryStr = `
       SELECT 
@@ -55,6 +38,8 @@ router.get("/", async (req, res) => {
         COALESCE(act_b.id, b.id) as resolved_booking_id,
         COALESCE(act_b.booking_number, b.booking_number) as booking_number,
         COALESCE(act_b.customer_name, b.customer_name) as booking_customer,
+        COALESCE(act_b.customer_phone, b.customer_phone) as booking_phone,
+        COALESCE(act_b.booking_date, b.booking_date) as booking_date,
         COALESCE(act_b.start_time, b.start_time) as booking_start,
         COALESCE(act_b.end_time, b.end_time) as booking_end,
         COALESCE(act_b.guest_count, b.guest_count) as booking_guests,
@@ -99,27 +84,50 @@ router.get("/", async (req, res) => {
       requestedEndTime = calculateEndTime(time);
     }
 
-    const todayStr = new Date().toISOString().split("T")[0];
-
-    // Fetch active bookings for target date
-    let activeDateBookings = [];
-    if (date) {
-      activeDateBookings = await db.query(`
-        SELECT * FROM bookings
-        WHERE booking_date = ?
-          AND status IN ('CONFIRMED', 'CHECKED_IN', 'PENDING')
-      `, [date]);
-    }
+    // Fetch active bookings for target date and today
+    const dateBookings = await db.query(`
+      SELECT * FROM bookings
+      WHERE booking_date IN (?, ?, ?)
+        AND status IN ('CONFIRMED', 'CHECKED_IN', 'PENDING')
+      ORDER BY start_time ASC
+    `, [targetDate, todayLocal, todayUtc]);
 
     const processedTables = tables.map((t) => {
       let isAvailableForSlot = true;
       let slotStatus = "AVAILABLE";
       let conflictReason = null;
+      let bookedStart = null;
+      let bookedEnd = null;
 
-      // Determine live floor status for Admin / Floor Map
+      // Filter reservations for this table
+      const tableTodayBookings = dateBookings.filter(
+        (bk) => (bk.table_id === t.id || bk.table_number === t.table_number) &&
+                (bk.booking_date === todayLocal || bk.booking_date === todayUtc)
+      );
+
+      // Find if table is in an active reservation slot right now
+      const currentActiveBooking = tableTodayBookings.find((bk) => {
+        const s = timeToMinutes(bk.start_time);
+        const e = timeToMinutes(bk.end_time);
+        return s !== null && e !== null && currentMins >= s - 45 && currentMins < e;
+      });
+
+      // Find upcoming booking later today
+      const upcomingBooking = tableTodayBookings.find((bk) => {
+        const s = timeToMinutes(bk.start_time);
+        return s !== null && s > currentMins;
+      });
+
+      const activeOrUpcoming = currentActiveBooking || upcomingBooking || (tableTodayBookings.length > 0 ? tableTodayBookings[0] : null);
+
+      // Determine live floor status for Admin / Waiter / Floor Map
       let liveStatus = "AVAILABLE";
       let liveOrderNumber = null;
       let liveBookingCustomer = null;
+      let liveBookingStart = null;
+      let liveBookingEnd = null;
+      let liveBookingPhone = null;
+      let liveBookingNumber = null;
 
       // 1. If table has an active dining order in progress (PLACED / ACCEPTED / COOKING / READY / SERVED)
       if (t.order_status && !["COMPLETED", "CANCELLED", "PAID"].includes(t.order_status)) {
@@ -128,13 +136,31 @@ router.get("/", async (req, res) => {
       } else if (t.status === "PAYMENT_PENDING") {
         liveStatus = "PAYMENT_PENDING";
         liveOrderNumber = t.order_number;
-      } else if (t.booking_number && (!date || t.booking_date === todayStr)) {
-        // 2. If table is reserved for today
+      } else if (currentActiveBooking) {
+        // Table is currently reserved in active window
         liveStatus = "RESERVED";
-        liveBookingCustomer = t.booking_customer;
+        liveBookingCustomer = currentActiveBooking.customer_name;
+        liveBookingStart = currentActiveBooking.start_time;
+        liveBookingEnd = currentActiveBooking.end_time;
+        liveBookingPhone = currentActiveBooking.customer_phone;
+        liveBookingNumber = currentActiveBooking.booking_number;
+      } else if (t.status === "RESERVED" && activeOrUpcoming) {
+        liveStatus = "RESERVED";
+        liveBookingCustomer = activeOrUpcoming.customer_name;
+        liveBookingStart = activeOrUpcoming.start_time;
+        liveBookingEnd = activeOrUpcoming.end_time;
+        liveBookingPhone = activeOrUpcoming.customer_phone;
+        liveBookingNumber = activeOrUpcoming.booking_number;
       } else if (t.status && t.status !== "AVAILABLE" && t.status !== "COMPLETED") {
         liveStatus = t.status;
       }
+
+      // If active booking was found, populate reservation metadata
+      const resolvedCustomer = liveBookingCustomer || activeOrUpcoming?.customer_name || t.booking_customer || null;
+      const resolvedStart = liveBookingStart || activeOrUpcoming?.start_time || t.booking_start || null;
+      const resolvedEnd = liveBookingEnd || activeOrUpcoming?.end_time || t.booking_end || null;
+      const resolvedPhone = liveBookingPhone || activeOrUpcoming?.customer_phone || t.booking_phone || null;
+      const resolvedNumber = liveBookingNumber || activeOrUpcoming?.booking_number || t.booking_number || null;
 
       // Check slot capacity
       if (guests && t.capacity < Number(guests)) {
@@ -144,13 +170,17 @@ router.get("/", async (req, res) => {
 
       // Check time overlap on target date for reservation booking
       if (date && time && requestedEndTime) {
-        const bookingsForTable = activeDateBookings.filter((bk) => bk.table_id === t.id);
+        const bookingsForTargetDate = dateBookings.filter(
+          (bk) => (bk.table_id === t.id || bk.table_number === t.table_number) && bk.booking_date === targetDate
+        );
 
-        for (const bk of bookingsForTable) {
+        for (const bk of bookingsForTargetDate) {
           if (hasTimeOverlap(time, requestedEndTime, bk.start_time, bk.end_time)) {
             isAvailableForSlot = false;
             slotStatus = "RESERVED";
-            conflictReason = `Booked (${bk.start_time} - ${bk.end_time})`;
+            conflictReason = `Booked for this time: ${bk.start_time} – ${bk.end_time}`;
+            bookedStart = bk.start_time;
+            bookedEnd = bk.end_time;
             break;
           }
         }
@@ -160,10 +190,25 @@ router.get("/", async (req, res) => {
         ...t,
         status: liveStatus,
         order_number: liveOrderNumber,
-        booking_customer: liveBookingCustomer,
+        booking_customer: resolvedCustomer,
+        booking_phone: resolvedPhone,
+        booking_number: resolvedNumber,
+        booking_start: resolvedStart,
+        booking_end: resolvedEnd,
+        checkout_time: resolvedEnd,
+        booked_time_slot: resolvedStart && resolvedEnd ? `${resolvedStart} – ${resolvedEnd}` : null,
+        upcoming_reservation: upcomingBooking ? {
+          customer: upcomingBooking.customer_name,
+          start_time: upcomingBooking.start_time,
+          end_time: upcomingBooking.end_time,
+          checkout_time: upcomingBooking.end_time,
+          guest_count: upcomingBooking.guest_count,
+        } : null,
         slotStatus,
         isAvailableForSlot,
         conflictReason,
+        booked_start: bookedStart,
+        booked_end: bookedEnd,
       };
     });
 

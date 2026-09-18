@@ -287,9 +287,17 @@ function Waiter() {
 
                   <div className="table-details-box">
                     {table.order_customer || table.booking_customer ? (
-                      <p className="customer-info">
-                        <strong>Guest:</strong> {table.order_customer || table.booking_customer}
-                      </p>
+                      <div className="waiter-customer-info-block">
+                        <p className="customer-info">
+                          <strong>Guest:</strong> {table.order_customer || table.booking_customer}
+                        </p>
+                        {table.booking_customer && (
+                          <p className="customer-booking-time" style={{ fontSize: "0.75rem", color: "#fbbf24", margin: "2px 0" }}>
+                            ⏰ <strong>{table.booked_time_slot || (table.booking_start ? `${table.booking_start} – ${table.booking_end}` : "Booked")}</strong>
+                            {table.checkout_time && <span style={{ display: "block", color: "#94a3b8", fontSize: "0.7rem" }}>Checkout: {table.checkout_time}</span>}
+                          </p>
+                        )}
+                      </div>
                     ) : (
                       <p className="empty-info">Table is ready for guests</p>
                     )}

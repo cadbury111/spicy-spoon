@@ -165,7 +165,7 @@ function VisualTableBooking({ slug = "spicy-spoon" }) {
           const bookedTableId = booking.table_id || booking.tableId;
           const bookedTableNum = booking.table_number || booking.tableNumber;
           const bookedDate = booking.booking_date || booking.bookingDate;
-          const bookedStart = booking.start_time || booking.bookingTime;
+          const bookedStart = booking.start_time || booking.bookingTime || booking.startTime;
           const bookedEnd = booking.end_time || booking.endTime || calculateEndTime(bookedStart);
 
           if (bookedDate === selectedDate) {
@@ -178,7 +178,10 @@ function VisualTableBooking({ slug = "spicy-spoon" }) {
                       ...t,
                       isAvailableForSlot: false,
                       slotStatus: "RESERVED",
-                      conflictReason: `Reserved (${bookedStart} – ${bookedEnd})`,
+                      conflictReason: `Booked for this time: ${bookedStart} – ${bookedEnd}`,
+                      booked_time_slot: `${bookedStart} – ${bookedEnd}`,
+                      booked_start: bookedStart,
+                      booked_end: bookedEnd,
                     };
                   }
                   return t;
@@ -196,8 +199,15 @@ function VisualTableBooking({ slug = "spicy-spoon" }) {
         }
       }
 
-      // Re-fetch authoritative backend availability
-      fetchAvailability(false);
+      // Re-fetch authoritative backend availability when any booking or table status changes
+      if (
+        event.type === "TABLE_STATUS_UPDATED" ||
+        event.type === "BOOKING_STATUS_UPDATED" ||
+        event.type === "TABLE_BOOKED" ||
+        event.type === "NEW_BOOKING"
+      ) {
+        fetchAvailability(false);
+      }
     },
     [fetchAvailability, selectedDate, selectedTime]
   );
@@ -218,7 +228,8 @@ function VisualTableBooking({ slug = "spicy-spoon" }) {
       if (table.capacity < guestCount) {
         alert(`Table ${table.table_number} fits max ${table.capacity} guests. You requested ${guestCount} guests.`);
       } else {
-        alert(`Table ${table.table_number} is already booked for this slot (${table.conflictReason || "Reserved"}).`);
+        const timeInfo = table.booked_time_slot || table.conflictReason || selectedTime;
+        alert(`Table ${table.table_number} has been booked for this time (${timeInfo}). After checkout time, the table automatically becomes available again.`);
       }
       return;
     }
@@ -548,7 +559,14 @@ function VisualTableBooking({ slug = "spicy-spoon" }) {
                           )}
 
                           {isLowCapacity && <div className="table-status-pill">Max {table.capacity}</div>}
-                          {isBooked && <div className="table-status-pill">Booked</div>}
+                          {isBooked && (
+                            <div className="table-status-pill booked-slot-pill" title={table.conflictReason || `Booked for this time: ${selectedTime}`}>
+                              <span className="booked-badge-txt">🔒 Reserved</span>
+                              <span className="booked-time-slot">
+                                {table.booked_time_slot || (table.conflictReason ? table.conflictReason.replace(/^Booked for this time:\s*/i, "") : selectedTime)}
+                              </span>
+                            </div>
+                          )}
                         </div>
                       );
                     })}
