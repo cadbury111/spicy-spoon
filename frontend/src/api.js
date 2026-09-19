@@ -235,8 +235,8 @@ async function request(endpoint, options = {}) {
         text.trim().startsWith("<!doctype");
       if (isHtml) {
         console.warn(`[API] Received HTML fallback for ${endpoint}.`);
-        if (isBookingSubmission) {
-          const err = new Error("Reservation server returned an unexpected response. Please try again.");
+        if (isBookingRelated) {
+          const err = new Error("Reservation server returned an unexpected response. Please check server connection.");
           err.status = 502;
           throw err;
         }
@@ -246,8 +246,8 @@ async function request(endpoint, options = {}) {
         data = JSON.parse(text);
       } catch (e) {
         console.warn(`[API] Non-JSON response for ${endpoint}.`);
-        if (isBookingSubmission) {
-          const err = new Error("Reservation server returned invalid JSON. Please try again.");
+        if (isBookingRelated) {
+          const err = new Error("Reservation server returned invalid response format. Please try again.");
           err.status = 502;
           throw err;
         }
@@ -256,7 +256,7 @@ async function request(endpoint, options = {}) {
     }
 
     if (!response.ok) {
-      if (!isBookingSubmission && (response.status === 404 || response.status === 502 || response.status === 504)) {
+      if (!isBookingRelated && (response.status === 404 || response.status === 502 || response.status === 504)) {
         console.warn(`[API] Status ${response.status} for ${endpoint}. Falling back to client-side data.`);
         return handleClientFallback(endpoint, options);
       }
@@ -269,10 +269,10 @@ async function request(endpoint, options = {}) {
     return data;
   } catch (netOrHttpErr) {
     clearTimeout(timeoutId);
-    if (isBookingSubmission) {
+    if (isBookingRelated) {
       const isTimeout = netOrHttpErr.name === "AbortError";
       const failureMsg = isTimeout
-        ? "Booking request timed out. Please check your network connection."
+        ? "Reservation request timed out. Please check your network connection."
         : (netOrHttpErr.message || "Failed to reach reservation server. Please check your connection.");
       const error = new Error(failureMsg, { cause: netOrHttpErr });
       error.status = netOrHttpErr.status || 500;
@@ -1275,17 +1275,17 @@ export const api = {
   getRestaurantQr: (slug = "spicy-spoon") => request(`/restaurants/${slug}/qr`),
   getRestaurantTables: async (slug = "spicy-spoon", params = {}) => {
     const res = await request(`/restaurants/${slug}/tables${buildQueryString(params)}`);
-    return ensureArray(res, INITIAL_DEMO_TABLES);
+    return Array.isArray(res) ? res : ensureArray(res, []);
   },
   getRestaurantTablesWithAvailability: async (slug = "spicy-spoon", params = {}) => {
     const res = await request(`/restaurants/${slug}/tables${buildQueryString(params)}`);
-    return ensureArray(res, INITIAL_DEMO_TABLES);
+    return Array.isArray(res) ? res : ensureArray(res, []);
   },
 
   // Tables
   getTables: async (params = {}) => {
     const res = await request(`/tables${buildQueryString(params)}`);
-    return ensureArray(res, INITIAL_DEMO_TABLES);
+    return Array.isArray(res) ? res : ensureArray(res, []);
   },
   getTable: (id) => request(`/tables/${id}`),
   updateTableStatus: (id, data) => request(`/tables/${id}/status`, { method: "PUT", body: data }),
@@ -1294,7 +1294,7 @@ export const api = {
   // Bookings (Guest Table Reservation)
   getBookings: async (params = {}) => {
     const res = await request(`/bookings${buildQueryString(params)}`);
-    return ensureArray(res, INITIAL_DEMO_BOOKINGS);
+    return Array.isArray(res) ? res : ensureArray(res, []);
   },
   createBooking: (data) => request("/bookings", { method: "POST", body: data }),
   updateBookingStatus: (id, status) => request(`/bookings/${id}/status`, { method: "PUT", body: { status } }),

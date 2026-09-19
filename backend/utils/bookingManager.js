@@ -42,13 +42,37 @@ function calculateEndTime(startTimeStr, durationMins = 90) {
 
 /**
  * Checks whether two time intervals overlap.
+ * Overlap Rule: newStart < existingEnd AND newEnd > existingStart
  */
 function hasTimeOverlap(start1, end1, start2, end2) {
-  const s1 = timeToMinutes(start1) ?? 0;
-  const e1 = timeToMinutes(end1) ?? 0;
-  const s2 = timeToMinutes(start2) ?? 0;
-  const e2 = timeToMinutes(end2) ?? 0;
-  return Math.max(s1, s2) < Math.min(e1, e2);
+  const s1 = timeToMinutes(start1);
+  const e1 = timeToMinutes(end1);
+  const s2 = timeToMinutes(start2);
+  const e2 = timeToMinutes(end2);
+  if (s1 === null || e1 === null || s2 === null || e2 === null) return false;
+  return s1 < e2 && e1 > s2;
+}
+
+/**
+ * Indian Standard Time (Asia/Kolkata, UTC+05:30) Timezone Helpers
+ */
+function getIndiaDateTime(dateObj = new Date()) {
+  const d = dateObj instanceof Date ? dateObj : new Date();
+  const istString = d.toLocaleString("en-US", { timeZone: "Asia/Kolkata" });
+  return new Date(istString);
+}
+
+function getIndiaDateString(dateObj = new Date()) {
+  const ist = getIndiaDateTime(dateObj);
+  const year = ist.getFullYear();
+  const month = String(ist.getMonth() + 1).padStart(2, "0");
+  const day = String(ist.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+}
+
+function getIndiaCurrentMinutes(dateObj = new Date()) {
+  const ist = getIndiaDateTime(dateObj);
+  return ist.getHours() * 60 + ist.getMinutes();
 }
 
 /**
@@ -62,10 +86,9 @@ function hasTimeOverlap(start1, end1, start2, end2) {
  */
 async function checkAndReleaseExpiredBookings(customNow = null) {
   try {
-    const now = customNow instanceof Date ? customNow : new Date();
-    const todayUtc = now.toISOString().split("T")[0];
-    const todayLocal = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
-    const currentMins = now.getHours() * 60 + now.getMinutes();
+    const istNow = customNow instanceof Date ? getIndiaDateTime(customNow) : getIndiaDateTime();
+    const todayIst = getIndiaDateString(istNow);
+    const currentMins = getIndiaCurrentMinutes(istNow);
 
     const activeBookings = await db.query(`
       SELECT b.*, t.table_number, t.status as table_current_status
@@ -82,12 +105,12 @@ async function checkAndReleaseExpiredBookings(customNow = null) {
     const releasedBookings = [];
 
     for (const bk of activeBookings) {
-      const isPastDate = bk.booking_date < todayUtc && bk.booking_date < todayLocal;
+      const isPastDate = bk.booking_date < todayIst;
       let isPastCheckout = false;
 
       if (isPastDate) {
         isPastCheckout = true;
-      } else if (bk.booking_date === todayUtc || bk.booking_date === todayLocal) {
+      } else if (bk.booking_date === todayIst) {
         const endMins = timeToMinutes(bk.end_time);
         if (endMins !== null && currentMins >= endMins) {
           isPastCheckout = true;
@@ -180,5 +203,8 @@ module.exports = {
   timeToMinutes,
   calculateEndTime,
   hasTimeOverlap,
+  getIndiaDateTime,
+  getIndiaDateString,
+  getIndiaCurrentMinutes,
   checkAndReleaseExpiredBookings,
 };

@@ -8,6 +8,8 @@ const {
   timeToMinutes,
   calculateEndTime,
   hasTimeOverlap,
+  getIndiaDateString,
+  getIndiaCurrentMinutes,
   checkAndReleaseExpiredBookings,
 } = require("../utils/bookingManager");
 
@@ -155,6 +157,9 @@ router.get("/:slug/tables", async (req, res) => {
       `, [date]);
     }
 
+    const todayIst = getIndiaDateString();
+    const currentMins = getIndiaCurrentMinutes();
+
     const processedTables = tables.map((t) => {
       let isAvailableForSlot = true;
       let slotStatus = "AVAILABLE";
@@ -163,13 +168,32 @@ router.get("/:slug/tables", async (req, res) => {
       let bookedEnd = null;
       let bookedCustomer = null;
 
-      // Check capacity
+      // 1. Check capacity
       if (guests && t.capacity < Number(guests)) {
         isAvailableForSlot = false;
         conflictReason = `Capacity is ${t.capacity} (requires ${guests})`;
       }
 
-      // Check time overlap on target date
+      // 2. Check administrative overrides / non-available states
+      if (t.status === "OUT_OF_SERVICE") {
+        isAvailableForSlot = false;
+        slotStatus = "OUT_OF_SERVICE";
+        conflictReason = "Table is currently out of service";
+      } else if (t.status === "RESERVED" && !t.current_booking_id) {
+        // Table was manually marked RESERVED by Admin
+        isAvailableForSlot = false;
+        slotStatus = "RESERVED";
+        conflictReason = "Reserved by restaurant management";
+      } else if (date === todayIst && ["OCCUPIED", "ORDER_PLACED", "PAYMENT_PENDING"].includes(t.status)) {
+        const slotStartMin = timeToMinutes(time);
+        if (slotStartMin !== null && currentMins >= slotStartMin - 30 && currentMins <= slotStartMin + 90) {
+          isAvailableForSlot = false;
+          slotStatus = t.status === "PAYMENT_PENDING" ? "PAYMENT_PENDING" : "OCCUPIED";
+          conflictReason = "Table is currently occupied";
+        }
+      }
+
+      // 3. Check time overlap on target date from bookings database
       if (date && time && requestedEndTime) {
         const bookingsForTable = activeBookings.filter(
           (bk) => String(bk.table_id) === String(t.id) || (bk.table_number && t.table_number && String(bk.table_number) === String(t.table_number))
@@ -188,7 +212,9 @@ router.get("/:slug/tables", async (req, res) => {
         }
       }
 
-      const effectiveStatus = (!isAvailableForSlot && slotStatus === "RESERVED") ? "BOOKED" : t.status;
+      const effectiveStatus = !isAvailableForSlot
+        ? (slotStatus !== "AVAILABLE" ? slotStatus : "RESERVED")
+        : (t.status === "AVAILABLE" ? "AVAILABLE" : t.status);
 
       return {
         ...t,

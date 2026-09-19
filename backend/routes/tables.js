@@ -7,6 +7,8 @@ const {
   timeToMinutes,
   calculateEndTime,
   hasTimeOverlap,
+  getIndiaDateString,
+  getIndiaCurrentMinutes,
   checkAndReleaseExpiredBookings,
 } = require("../utils/bookingManager");
 
@@ -26,11 +28,9 @@ router.get("/", async (req, res) => {
     await checkAndReleaseExpiredBookings();
     const { date, time, guests, section } = req.query;
 
-    const now = new Date();
-    const todayLocal = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
-    const todayUtc = now.toISOString().split("T")[0];
-    const currentMins = now.getHours() * 60 + now.getMinutes();
-    const targetDate = (date && date !== "undefined" && date !== "null") ? date : todayLocal;
+    const todayIst = getIndiaDateString();
+    const currentMins = getIndiaCurrentMinutes();
+    const targetDate = (date && date !== "undefined" && date !== "null") ? date : todayIst;
 
     let queryStr = `
       SELECT 
@@ -87,10 +87,10 @@ router.get("/", async (req, res) => {
     // Fetch active bookings for target date and today
     const dateBookings = await db.query(`
       SELECT * FROM bookings
-      WHERE booking_date IN (?, ?, ?)
+      WHERE booking_date IN (?, ?)
         AND status IN ('CONFIRMED', 'CHECKED_IN', 'PENDING')
       ORDER BY start_time ASC
-    `, [targetDate, todayLocal, todayUtc]);
+    `, [targetDate, todayIst]);
 
     const processedTables = tables.map((t) => {
       let isAvailableForSlot = true;
@@ -102,7 +102,7 @@ router.get("/", async (req, res) => {
       // Filter reservations for this table
       const tableTodayBookings = dateBookings.filter(
         (bk) => (bk.table_id === t.id || bk.table_number === t.table_number) &&
-                (bk.booking_date === todayLocal || bk.booking_date === todayUtc)
+                bk.booking_date === todayIst
       );
 
       // Find if table is in an active reservation slot right now
@@ -138,19 +138,19 @@ router.get("/", async (req, res) => {
         liveOrderNumber = t.order_number;
       } else if (currentActiveBooking) {
         // Table is currently reserved in active window
-        liveStatus = "BOOKED";
+        liveStatus = "RESERVED";
         liveBookingCustomer = currentActiveBooking.customer_name;
         liveBookingStart = currentActiveBooking.start_time;
         liveBookingEnd = currentActiveBooking.end_time;
         liveBookingPhone = currentActiveBooking.customer_phone;
         liveBookingNumber = currentActiveBooking.booking_number;
-      } else if ((t.status === "RESERVED" || t.status === "BOOKED") && activeOrUpcoming) {
-        liveStatus = "BOOKED";
-        liveBookingCustomer = activeOrUpcoming.customer_name;
-        liveBookingStart = activeOrUpcoming.start_time;
-        liveBookingEnd = activeOrUpcoming.end_time;
-        liveBookingPhone = activeOrUpcoming.customer_phone;
-        liveBookingNumber = activeOrUpcoming.booking_number;
+      } else if (t.status === "RESERVED" || t.status === "BOOKED" || activeOrUpcoming) {
+        liveStatus = "RESERVED";
+        liveBookingCustomer = activeOrUpcoming?.customer_name || t.booking_customer;
+        liveBookingStart = activeOrUpcoming?.start_time || t.booking_start;
+        liveBookingEnd = activeOrUpcoming?.end_time || t.booking_end;
+        liveBookingPhone = activeOrUpcoming?.customer_phone || t.booking_phone;
+        liveBookingNumber = activeOrUpcoming?.booking_number || t.booking_number;
       } else if (t.status && t.status !== "AVAILABLE" && t.status !== "COMPLETED") {
         liveStatus = t.status;
       }
@@ -186,7 +186,7 @@ router.get("/", async (req, res) => {
         }
       }
 
-      const effectiveStatus = (!isAvailableForSlot && slotStatus === "RESERVED") ? "BOOKED" : liveStatus;
+      const effectiveStatus = (!isAvailableForSlot && slotStatus === "RESERVED") ? "RESERVED" : liveStatus;
 
       return {
         ...t,
@@ -251,7 +251,7 @@ router.get("/:id", async (req, res) => {
   }
 });
 
-// Update table status (ADMIN ONLY)
+// Update table status (ADMIN ONLY) - Full Control (AVAILABLE, RESERVE, OCCUPY, RELEASE)
 router.put("/:id/status", verifyStaffAuth(["ADMIN"]), async (req, res) => {
   try {
     const tableId = Number(req.params.id);
@@ -272,33 +272,52 @@ router.put("/:id/status", verifyStaffAuth(["ADMIN"]), async (req, res) => {
       return res.status(400).json({ message: `Invalid status. Must be one of: ${validStatuses.join(", ")}` });
     }
 
+    const targetTable = await db.queryOne(
+      "SELECT * FROM restaurant_tables WHERE id = ? OR table_number = ?",
+      [tableId || 0, req.params.id]
+    );
+
+    if (!targetTable) {
+      return res.status(404).json({ message: "Table not found" });
+    }
+
     if (status === "AVAILABLE") {
+      // 1. Complete / Cancel any active or confirmed bookings on this table for today
+      await db.execute(`
+        UPDATE bookings
+        SET status = 'COMPLETED', updated_at = CURRENT_TIMESTAMP
+        WHERE table_id = ? AND status IN ('CONFIRMED', 'CHECKED_IN', 'PENDING')
+      `, [targetTable.id]);
+
+      // 2. Reset table to AVAILABLE
       await db.execute(`
         UPDATE restaurant_tables
-        SET status = ?, current_booking_id = NULL, current_order_id = NULL, current_session_id = NULL
-        WHERE id = ? OR table_number = ?
-      `, [status, tableId || 0, req.params.id]);
+        SET status = 'AVAILABLE', current_booking_id = NULL, current_order_id = NULL, current_session_id = NULL
+        WHERE id = ?
+      `, [targetTable.id]);
+
+      broadcast("BOOKING_STATUS_UPDATED", { table_id: targetTable.id, status: "COMPLETED" });
     } else {
+      const normalizedStatus = status === "BOOKED" ? "RESERVED" : status;
       await db.execute(`
         UPDATE restaurant_tables
         SET status = ?,
             current_booking_id = COALESCE(?, current_booking_id),
             current_order_id = COALESCE(?, current_order_id),
             current_session_id = COALESCE(?, current_session_id)
-        WHERE id = ? OR table_number = ?
+        WHERE id = ?
       `, [
-        status,
+        normalizedStatus,
         current_booking_id !== undefined ? current_booking_id : null,
         current_order_id !== undefined ? current_order_id : null,
         current_session_id !== undefined ? current_session_id : null,
-        tableId || 0,
-        req.params.id,
+        targetTable.id,
       ]);
     }
 
     const updatedTable = await db.queryOne(
-      "SELECT * FROM restaurant_tables WHERE id = ? OR table_number = ?",
-      [tableId || 0, req.params.id]
+      "SELECT * FROM restaurant_tables WHERE id = ?",
+      [targetTable.id]
     );
 
     broadcast("TABLE_STATUS_UPDATED", updatedTable);

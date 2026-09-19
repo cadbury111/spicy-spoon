@@ -8,6 +8,9 @@ const {
   calculateEndTime,
   hasTimeOverlap,
   checkAndReleaseExpiredBookings,
+  getIndiaDateTime,
+  getIndiaDateString,
+  getIndiaCurrentMinutes,
 } = require("../utils/bookingManager");
 
 function generateBookingNumber() {
@@ -95,7 +98,13 @@ router.get("/availability/check", async (req, res) => {
       let isAvailable = true;
       let reason = null;
 
-      if (guests && table.capacity < Number(guests)) {
+      if (table.status === "OUT_OF_SERVICE") {
+        isAvailable = false;
+        reason = "Table is currently out of service";
+      } else if (table.status === "RESERVED" && !table.current_booking_id) {
+        isAvailable = false;
+        reason = "Reserved by restaurant management";
+      } else if (guests && table.capacity < Number(guests)) {
         isAvailable = false;
         reason = `Capacity is ${table.capacity}, requested ${guests}`;
       }
@@ -182,11 +191,11 @@ router.post("/", async (req, res) => {
       return res.status(400).json({ success: false, message: "Valid booking date (YYYY-MM-DD) is required" });
     }
     
-    const now = new Date();
-    const todayUtc = now.toISOString().split("T")[0];
-    const todayLocal = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
+    const todayIst = getIndiaDateString();
+    const isToday = booking_date === todayIst;
+    const currentMins = getIndiaCurrentMinutes();
 
-    if (booking_date < todayUtc && booking_date < todayLocal) {
+    if (booking_date < todayIst) {
       return res.status(400).json({ success: false, message: "Booking date cannot be in the past" });
     }
 
@@ -195,14 +204,8 @@ router.post("/", async (req, res) => {
       return res.status(400).json({ success: false, message: "Valid start time is required (e.g. 07:30 PM)" });
     }
 
-    const isToday = booking_date === todayUtc || booking_date === todayLocal;
-    const clientMins = req.body.client_mins !== undefined ? Number(req.body.client_mins) : null;
-    const currentMins = clientMins !== null && !isNaN(clientMins)
-      ? clientMins
-      : (now.getHours() * 60 + now.getMinutes());
-
-    // Only reject for today if client explicitly passed client_mins and slot has unambiguously passed
-    if (isToday && clientMins !== null && startMins < currentMins - 15) {
+    // Only reject for today if slot has passed by more than 15 minutes
+    if (isToday && startMins < currentMins - 15) {
       return res.status(400).json({
         success: false,
         message: "The selected time slot has already passed for today. Please choose an upcoming time slot.",
@@ -232,6 +235,19 @@ router.post("/", async (req, res) => {
           throw err;
         }
 
+        // Check admin holds / out of service
+        if (targetTable.status === "OUT_OF_SERVICE") {
+          const err = new Error(`Table ${targetTable.table_number} is currently out of service. Please choose another table.`);
+          err.statusCode = 409;
+          throw err;
+        }
+
+        if (targetTable.status === "RESERVED" && !targetTable.current_booking_id) {
+          const err = new Error(`Table ${targetTable.table_number} is reserved by management. Please choose another table.`);
+          err.statusCode = 409;
+          throw err;
+        }
+
         // Capacity check
         if (targetTable.capacity < Number(guest_count)) {
           const err = new Error(
@@ -243,7 +259,7 @@ router.post("/", async (req, res) => {
       } else {
         // Auto-assign table that fits capacity and has no overlap
         const candidates = await trx.query(
-          "SELECT * FROM restaurant_tables WHERE capacity >= ? ORDER BY capacity ASC, id ASC",
+          "SELECT * FROM restaurant_tables WHERE capacity >= ? AND status != 'OUT_OF_SERVICE' AND (status != 'RESERVED' OR current_booking_id IS NOT NULL) ORDER BY capacity ASC, id ASC",
           [Number(guest_count)]
         );
 
@@ -281,7 +297,7 @@ router.post("/", async (req, res) => {
       for (const eb of existingBookings) {
         if (hasTimeOverlap(start_time, calculatedEndTime, eb.start_time, eb.end_time)) {
           const err = new Error(
-            `Sorry, Table ${targetTable.table_number} was just booked by another guest for ${eb.start_time} – ${eb.end_time}. Please select another table.`
+            `Table ${targetTable.table_number} is no longer available for the selected time. Please choose another table or time.`
           );
           err.statusCode = 409;
           err.conflictingBooking = eb;
@@ -332,21 +348,12 @@ router.post("/", async (req, res) => {
         String(customer_phone).trim(),
       ]);
 
-      // If booking is today and within active window, set table to RESERVED
+      // If booking is today, update table status to RESERVED and link booking
       if (isToday) {
-        const endMins = (timeToMinutes(calculatedEndTime) ?? (startMins + 90));
-        const isCurrentlyActive = currentMins >= startMins - 45 && currentMins <= endMins;
-        if (isCurrentlyActive) {
-          await trx.execute(
-            "UPDATE restaurant_tables SET status = 'RESERVED', current_booking_id = ?, current_session_id = ? WHERE id = ?",
-            [newBookingId, newSessionId, targetTable.id]
-          );
-        } else {
-          await trx.execute(
-            "UPDATE restaurant_tables SET current_session_id = COALESCE(current_session_id, ?) WHERE id = ?",
-            [newSessionId, targetTable.id]
-          );
-        }
+        await trx.execute(
+          "UPDATE restaurant_tables SET status = 'RESERVED', current_booking_id = ?, current_session_id = ? WHERE id = ?",
+          [newBookingId, newSessionId, targetTable.id]
+        );
       }
 
       let booked = await trx.queryOne(`

@@ -149,7 +149,7 @@ function VisualTableBooking({ slug = "spicy-spoon" }) {
     fetchAvailability(true);
     const interval = setInterval(() => {
       fetchAvailability(false);
-    }, 4000);
+    }, 3000);
     return () => clearInterval(interval);
   }, [fetchAvailability]);
 

@@ -57,6 +57,9 @@ async function runTests() {
     const authRes = await req("/api/auth/login", "POST", { username: "admin", password: "admin123" });
     const adminToken = authRes.data?.token;
 
+    // Reset Table T7 if it was previously held
+    await req("/api/tables/7/status", "PUT", { status: "AVAILABLE" }, adminToken);
+
     // 1. Test Restaurant Profile & Permanent QR
     console.log("\n1. Testing GET /api/restaurants/spicy-spoon & QR...");
     const rRes = await req("/api/restaurants/spicy-spoon");

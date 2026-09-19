@@ -171,7 +171,7 @@ function Admin({ onLogout }) {
     fetchAllData(true);
     const timer = setInterval(() => {
       fetchAllData(false);
-    }, 5000);
+    }, 3000);
     return () => clearInterval(timer);
   }, [fetchAllData]);
 
