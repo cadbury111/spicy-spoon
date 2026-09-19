@@ -60,6 +60,7 @@ function Admin({ onLogout }) {
   // Core Data
   const [analytics, setAnalytics] = useState(null);
   const [tables, setTables] = useState([]);
+  const [tableError, setTableError] = useState(null);
   const [orders, setOrders] = useState([]);
   const [bills, setBills] = useState([]);
   const [bookings, setBookings] = useState([]);
@@ -111,7 +112,7 @@ function Admin({ onLogout }) {
       if (isInitial) setLoading(true);
       const [aData, tData, oData, bData, bkData, mData, sData, stData, qrData, cReqs] = await Promise.all([
         api.getAnalytics().catch(() => null),
-        api.getTables().catch(() => []),
+        api.getTables().catch((err) => ({ __error: err })),
         api.getOrders().catch(() => []),
         api.getBills().catch(() => []),
         api.getBookings().catch(() => []),
@@ -123,8 +124,35 @@ function Admin({ onLogout }) {
       ]);
 
       if (aData && typeof aData === "object" && !Array.isArray(aData)) setAnalytics(aData);
-      if (Array.isArray(tData)) setTables(tData);
-      else if (tData?.tables && Array.isArray(tData.tables)) setTables(tData.tables);
+
+      if (tData && tData.__error) {
+        console.error("Admin: Error fetching tables from backend:", tData.__error);
+        setTableError(tData.__error.message || "Unable to load tables from backend");
+      } else {
+        const rawTables = Array.isArray(tData)
+          ? tData
+          : (tData?.tables && Array.isArray(tData.tables) ? tData.tables : (tData?.data && Array.isArray(tData.data) ? tData.data : null));
+
+        if (Array.isArray(rawTables)) {
+          if (rawTables.length > 0) {
+            const normalized = rawTables.map((t) => ({
+              ...t,
+              id: t.id || t.table_number || t.tableNumber,
+              table_number: t.table_number || t.tableNumber,
+              tableNumber: t.tableNumber || t.table_number,
+              capacity: t.capacity || t.seats || 2,
+              seats: t.seats || t.capacity || 2,
+              section: t.section || "Main Hall",
+              status: t.status || "AVAILABLE",
+            }));
+            setTables(normalized);
+            setTableError(null);
+          } else {
+            setTables([]);
+            setTableError(null);
+          }
+        }
+      }
 
       if (Array.isArray(oData)) setOrders(oData);
       else if (oData?.orders && Array.isArray(oData.orders)) setOrders(oData.orders);
@@ -670,68 +698,89 @@ function Admin({ onLogout }) {
         {/* TAB 2: LIVE FLOOR MAP */}
         {activeTab === "floormap" && (
           <div className="tab-content floormap-tab">
-            <div className="floormap-header-controls">
-              <div className="floor-summary-chips">
-                <span className="chip available">🟢 Available ({(Array.isArray(tables) ? tables : []).filter((t) => t.status === "AVAILABLE").length})</span>
-                <span className="chip reserved">🟡 Booked ({(Array.isArray(tables) ? tables : []).filter((t) => t.status === "BOOKED" || t.status === "RESERVED").length})</span>
-                <span className="chip occupied">🔴 Occupied ({(Array.isArray(tables) ? tables : []).filter((t) => ["OCCUPIED", "ORDER_PLACED"].includes(t.status)).length})</span>
-                <span className="chip payment">💳 Payment Pending ({(Array.isArray(tables) ? tables : []).filter((t) => t.status === "PAYMENT_PENDING").length})</span>
+            {tableError && (!Array.isArray(tables) || tables.length === 0) ? (
+              <div className="floormap-error-banner">
+                <AlertCircle className="floormap-error-icon" size={32} />
+                <div className="floormap-error-info">
+                  <h4>Unable to load tables</h4>
+                  <p>{tableError}. Please check your backend connection.</p>
+                </div>
+                <button
+                  className="btn-floormap-retry"
+                  onClick={() => {
+                    setTableError(null);
+                    fetchAllData(true);
+                  }}
+                >
+                  <RefreshCw size={16} /> Retry
+                </button>
               </div>
-            </div>
-
-            <div className="admin-floor-sections">
-              {["Main Hall", "Window Side", "Outdoor Patio", "VIP Lounge"].map((secName) => {
-                const safeTbls = Array.isArray(tables) ? tables : [];
-                const secTables = safeTbls.filter((t) => t.section === secName);
-
-                return (
-                  <div className="floor-section-group" key={secName}>
-                    <div className="group-title">
-                      <h3>{secName}</h3>
-                      <span>{secTables.length} Tables</span>
-                    </div>
-
-                    <div className="group-tables-grid">
-                      {secTables.map((tbl) => (
-                        <div
-                          key={tbl.id}
-                          className={`admin-table-card ${tbl.status.toLowerCase()}`}
-                          onClick={() => handleOpenTableDetails(tbl)}
-                        >
-                          <div className="tbl-card-top">
-                            <span className="tbl-number">{tbl.table_number}</span>
-                            <span className={`tbl-status-badge ${tbl.status.toLowerCase()}`}>
-                              {tbl.status === "RESERVED" ? "BOOKED" : tbl.status}
-                            </span>
-                          </div>
-                          <div className="tbl-card-body">
-                            <p className="tbl-cap">👥 {tbl.capacity} Seats</p>
-                            {tbl.booking_customer && (
-                              <div className="tbl-card-booking-info">
-                                <p className="tbl-guest-name">👤 {tbl.booking_customer}</p>
-                                <p className="tbl-booked-time">
-                                  📅 <strong>{tbl.booked_time_slot || (tbl.booking_start ? `${tbl.booking_start} – ${tbl.booking_end}` : "Reserved")}</strong>
-                                </p>
-                                {tbl.checkout_time && (
-                                  <small className="tbl-checkout-pill">Checkout: {tbl.checkout_time}</small>
-                                )}
-                              </div>
-                            )}
-                            {tbl.upcoming_reservation && !tbl.booking_customer && (
-                              <div className="tbl-card-upcoming-info">
-                                <p className="tbl-upcoming-tag">⏰ Next: {tbl.upcoming_reservation.start_time}</p>
-                                <small>({tbl.upcoming_reservation.customer})</small>
-                              </div>
-                            )}
-                            {tbl.order_number && <p className="tbl-order-tag">🍽️ Order #{tbl.order_number}</p>}
-                          </div>
-                        </div>
-                      ))}
-                    </div>
+            ) : (
+              <>
+                <div className="floormap-header-controls">
+                  <div className="floor-summary-chips">
+                    <span className="chip available">🟢 Available ({(Array.isArray(tables) ? tables : []).filter((t) => t.status === "AVAILABLE").length})</span>
+                    <span className="chip reserved">🟡 Booked ({(Array.isArray(tables) ? tables : []).filter((t) => t.status === "BOOKED" || t.status === "RESERVED").length})</span>
+                    <span className="chip occupied">🔴 Occupied ({(Array.isArray(tables) ? tables : []).filter((t) => ["OCCUPIED", "ORDER_PLACED"].includes(t.status)).length})</span>
+                    <span className="chip payment">💳 Payment Pending ({(Array.isArray(tables) ? tables : []).filter((t) => t.status === "PAYMENT_PENDING").length})</span>
                   </div>
-                );
-              })}
-            </div>
+                </div>
+
+                <div className="admin-floor-sections">
+                  {["Main Hall", "Window Side", "Outdoor Patio", "VIP Lounge"].map((secName) => {
+                    const safeTbls = Array.isArray(tables) ? tables : [];
+                    const secTables = safeTbls.filter((t) => (t.section || "").trim().toLowerCase() === secName.trim().toLowerCase());
+
+                    return (
+                      <div className="floor-section-group" key={secName}>
+                        <div className="group-title">
+                          <h3>{secName}</h3>
+                          <span>{secTables.length} Tables</span>
+                        </div>
+
+                        <div className="group-tables-grid">
+                          {secTables.map((tbl) => (
+                            <div
+                              key={tbl.id || tbl.table_number || tbl.tableNumber}
+                              className={`admin-table-card ${(tbl.status || "available").toLowerCase()}`}
+                              onClick={() => handleOpenTableDetails(tbl)}
+                            >
+                              <div className="tbl-card-top">
+                                <span className="tbl-number">{tbl.table_number || tbl.tableNumber}</span>
+                                <span className={`tbl-status-badge ${(tbl.status || "available").toLowerCase()}`}>
+                                  {tbl.status === "RESERVED" ? "BOOKED" : tbl.status}
+                                </span>
+                              </div>
+                              <div className="tbl-card-body">
+                                <p className="tbl-cap">👥 {tbl.capacity || tbl.seats} Seats</p>
+                                {tbl.booking_customer && (
+                                  <div className="tbl-card-booking-info">
+                                    <p className="tbl-guest-name">👤 {tbl.booking_customer}</p>
+                                    <p className="tbl-booked-time">
+                                      📅 <strong>{tbl.booked_time_slot || (tbl.booking_start ? `${tbl.booking_start} – ${tbl.booking_end}` : "Reserved")}</strong>
+                                    </p>
+                                    {tbl.checkout_time && (
+                                      <small className="tbl-checkout-pill">Checkout: {tbl.checkout_time}</small>
+                                    )}
+                                  </div>
+                                )}
+                                {tbl.upcoming_reservation && !tbl.booking_customer && (
+                                  <div className="tbl-card-upcoming-info">
+                                    <p className="tbl-upcoming-tag">⏰ Next: {tbl.upcoming_reservation.start_time}</p>
+                                    <small>({tbl.upcoming_reservation.customer})</small>
+                                  </div>
+                                )}
+                                {tbl.order_number && <p className="tbl-order-tag">🍽️ Order #{tbl.order_number}</p>}
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </>
+            )}
           </div>
         )}
 

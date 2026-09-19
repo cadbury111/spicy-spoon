@@ -190,6 +190,10 @@ router.get("/", async (req, res) => {
 
       return {
         ...t,
+        tableNumber: t.table_number,
+        table_number: t.table_number,
+        seats: t.capacity,
+        capacity: t.capacity,
         status: effectiveStatus,
         order_number: liveOrderNumber,
         booking_customer: resolvedCustomer,

@@ -1,8 +1,8 @@
 {
   "name": "spicy-spoon",
   "version": "1.0.0",
-  "private": true,
   "scripts": {
+    "start": "node server.js",
     "dev:backend": "cd backend && node server.js",
     "dev:frontend": "cd frontend && npm run dev",
     "build": "cd frontend && npm install && npm run build",

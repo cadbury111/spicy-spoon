@@ -68,8 +68,9 @@ export function getWsUrl() {
     if (/^(\d{1,3}\.){3}\d{1,3}$/.test(hostname)) {
       return `${protocol}//${hostname}:5000`;
     }
+    return "wss://spicy-spoon-6.onrender.com";
   }
-  return null;
+  return "wss://spicy-spoon-6.onrender.com";
 }
 
 // Initial Seed Data for Demo Tables
@@ -213,10 +214,8 @@ async function request(endpoint, options = {}) {
 
   const isBookingSubmission = endpoint.startsWith("/bookings") && method === "POST";
 
-  try {
-    const response = await fetch(url, config);
-    clearTimeout(timeoutId);
-
+  async function tryFetch(fetchUrl) {
+    const response = await fetch(fetchUrl, config);
     if (response.status === 401 && endpoint.startsWith("/auth/me")) {
       localStorage.removeItem("spicy_staff_token");
       localStorage.removeItem("spicy_staff_user");
@@ -234,32 +233,21 @@ async function request(endpoint, options = {}) {
         text.trim().startsWith("<html") ||
         text.trim().startsWith("<!doctype");
       if (isHtml) {
-        console.warn(`[API] Received HTML fallback for ${endpoint}.`);
-        if (isBookingRelated) {
-          const err = new Error("Reservation server returned an unexpected response. Please check server connection.");
-          err.status = 502;
-          throw err;
-        }
-        return handleClientFallback(endpoint, options);
+        const err = new Error(`Server returned unexpected HTML for ${endpoint}. Backend may be deploying or restarting.`);
+        err.status = response.status === 200 ? 502 : response.status;
+        err.isHtml = true;
+        throw err;
       }
       try {
         data = JSON.parse(text);
       } catch (e) {
-        console.warn(`[API] Non-JSON response for ${endpoint}.`);
-        if (isBookingRelated) {
-          const err = new Error("Reservation server returned invalid response format. Please try again.");
-          err.status = 502;
-          throw err;
-        }
-        return handleClientFallback(endpoint, options);
+        const err = new Error(`Invalid response format from server for ${endpoint}.`);
+        err.status = response.status;
+        throw err;
       }
     }
 
     if (!response.ok) {
-      if (!isBookingRelated && (response.status === 404 || response.status === 502 || response.status === 504)) {
-        console.warn(`[API] Status ${response.status} for ${endpoint}. Falling back to client-side data.`);
-        return handleClientFallback(endpoint, options);
-      }
       const error = new Error(data.message || `Request failed with status ${response.status}`);
       error.status = response.status;
       error.data = data;
@@ -267,22 +255,48 @@ async function request(endpoint, options = {}) {
     }
 
     return data;
-  } catch (netOrHttpErr) {
+  }
+
+  try {
+    const data = await tryFetch(url);
     clearTimeout(timeoutId);
+    return data;
+  } catch (primaryErr) {
+    // If running in browser and not localhost, attempt alternate endpoint (Render direct <-> Vercel /api rewrite)
+    const isLocal = typeof window !== "undefined" && (window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1");
+    if (!isLocal && typeof window !== "undefined") {
+      const altBase = API_BASE_URL.startsWith("http") ? "/api" : "https://spicy-spoon-6.onrender.com/api";
+      let altUrl = `${altBase}${endpoint}`;
+      if (isBookingRelated && method === "GET") {
+        const separator = altUrl.includes("?") ? "&" : "?";
+        altUrl = `${altUrl}${separator}_t=${Date.now()}`;
+      }
+      try {
+        const altData = await tryFetch(altUrl);
+        clearTimeout(timeoutId);
+        return altData;
+      } catch (altErr) {
+        // Both primary and alternate failed
+      }
+    }
+
+    clearTimeout(timeoutId);
+
     if (isBookingRelated) {
-      const isTimeout = netOrHttpErr.name === "AbortError";
+      const isTimeout = primaryErr.name === "AbortError";
       const failureMsg = isTimeout
         ? "Reservation request timed out. Please check your network connection."
-        : (netOrHttpErr.message || "Failed to reach reservation server. Please check your connection.");
-      const error = new Error(failureMsg, { cause: netOrHttpErr });
-      error.status = netOrHttpErr.status || 500;
-      error.data = netOrHttpErr.data || { message: failureMsg };
+        : (primaryErr.message || "Failed to reach reservation server. Please check your connection.");
+      const error = new Error(failureMsg, { cause: primaryErr });
+      error.status = primaryErr.status || 500;
+      error.data = primaryErr.data || { message: failureMsg };
       throw error;
     }
-    if (netOrHttpErr.status && netOrHttpErr.status !== 404 && netOrHttpErr.status !== 502 && netOrHttpErr.status !== 504) {
-      throw netOrHttpErr;
+
+    if (primaryErr.status && primaryErr.status !== 404 && primaryErr.status !== 502 && primaryErr.status !== 504) {
+      throw primaryErr;
     }
-    return handleClientFallback(endpoint, options, netOrHttpErr);
+    return handleClientFallback(endpoint, options, primaryErr);
   }
 }
 
@@ -1244,6 +1258,7 @@ function ensureArray(val, fallback = []) {
   if (Array.isArray(val)) return val;
   if (val && typeof val === "object") {
     if (Array.isArray(val.tables)) return val.tables;
+    if (Array.isArray(val.data)) return val.data;
     if (Array.isArray(val.orders)) return val.orders;
     if (Array.isArray(val.bills)) return val.bills;
     if (Array.isArray(val.bookings)) return val.bookings;
