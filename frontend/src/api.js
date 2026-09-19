@@ -38,10 +38,10 @@ function resolveApiBaseUrl() {
     if (/^(\d{1,3}\.){3}\d{1,3}$/.test(hostname)) {
       return `${protocol}//${hostname}:5000/api`;
     }
-    // Production default: Render production backend API URL
-    return "https://spicy-spoon-6.onrender.com/api";
+    // Production default: same-origin API path for Vercel serverless / reverse proxy
+    return "/api";
   }
-  return "https://spicy-spoon-6.onrender.com/api";
+  return "/api";
 }
 
 const API_BASE_URL = resolveApiBaseUrl();
@@ -165,28 +165,16 @@ function buildQueryString(params = {}) {
 }
 
 async function request(endpoint, options = {}) {
-  const isBookingRelated =
-    endpoint.startsWith("/bookings") ||
-    endpoint.includes("/tables") ||
-    endpoint.startsWith("/tables");
-
+  const isBookingSubmission = endpoint.startsWith("/bookings") && (options.method || "GET").toUpperCase() === "POST";
   const cleanEndpoint = endpoint.startsWith("/api/") ? endpoint.slice(4) : (endpoint === "/api" ? "" : endpoint);
   const normalizedEndpoint = cleanEndpoint.startsWith("/") ? cleanEndpoint : `/${cleanEndpoint}`;
 
-  let url = `${API_BASE_URL}${normalizedEndpoint}`;
   const method = (options.method || "GET").toUpperCase();
-
-  // Cache-busting timestamp parameter for availability and table queries
-  if (isBookingRelated && method === "GET") {
-    const separator = url.includes("?") ? "&" : "?";
-    url = `${url}${separator}_t=${Date.now()}`;
-  }
-
-  const token = localStorage.getItem("spicy_staff_token");
+  const token = typeof localStorage !== "undefined" ? localStorage.getItem("spicy_staff_token") : null;
 
   const headers = {
     "Content-Type": "application/json",
-    ...(isBookingRelated
+    ...(method === "GET"
       ? {
           "Cache-Control": "no-cache, no-store, must-revalidate",
           Pragma: "no-cache",
@@ -208,20 +196,37 @@ async function request(endpoint, options = {}) {
     config.body = JSON.stringify(config.body);
   }
 
-  // 15-second timeout to prevent requests from hanging indefinitely
+  // 10-second timeout to prevent requests from hanging indefinitely
   const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), 15000);
+  const timeoutId = setTimeout(() => controller.abort(), 10000);
   if (!config.signal) {
     config.signal = controller.signal;
   }
 
-  const isBookingSubmission = endpoint.startsWith("/bookings") && method === "POST";
+  // Build candidate bases to ensure working connection across dev, serverless, and hosted environments
+  const candidateBases = [];
+  const primaryBase = (API_BASE_URL || "/api").replace(/\/$/, "");
+  candidateBases.push(primaryBase);
+
+  if (typeof window !== "undefined") {
+    const isLocal = window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1";
+    if (isLocal) {
+      if (!candidateBases.includes("http://localhost:5000/api")) candidateBases.push("http://localhost:5000/api");
+      if (!candidateBases.includes("/api")) candidateBases.push("/api");
+      if (!candidateBases.includes("http://localhost:5000")) candidateBases.push("http://localhost:5000");
+    } else {
+      if (!candidateBases.includes("/api")) candidateBases.push("/api");
+      if (!candidateBases.includes("https://spicy-spoon-6.onrender.com/api")) candidateBases.push("https://spicy-spoon-6.onrender.com/api");
+    }
+  }
 
   async function tryFetch(fetchUrl) {
     const response = await fetch(fetchUrl, config);
     if (response.status === 401 && endpoint.startsWith("/auth/me")) {
-      localStorage.removeItem("spicy_staff_token");
-      localStorage.removeItem("spicy_staff_user");
+      if (typeof localStorage !== "undefined") {
+        localStorage.removeItem("spicy_staff_token");
+        localStorage.removeItem("spicy_staff_user");
+      }
     }
 
     const contentType = response.headers.get("content-type") || "";
@@ -260,47 +265,44 @@ async function request(endpoint, options = {}) {
     return data;
   }
 
-  try {
-    const data = await tryFetch(url);
-    clearTimeout(timeoutId);
-    return data;
-  } catch (primaryErr) {
-    // If running in browser and not localhost, attempt alternate endpoint (Render direct <-> Vercel /api rewrite)
-    const isLocal = typeof window !== "undefined" && (window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1");
-    if (!isLocal && typeof window !== "undefined") {
-      const altBase = API_BASE_URL.startsWith("http") ? "/api" : "https://spicy-spoon-6.onrender.com/api";
-      let altUrl = `${altBase}${normalizedEndpoint}`;
-      if (isBookingRelated && method === "GET") {
-        const separator = altUrl.includes("?") ? "&" : "?";
-        altUrl = `${altUrl}${separator}_t=${Date.now()}`;
-      }
-      try {
-        const altData = await tryFetch(altUrl);
-        clearTimeout(timeoutId);
-        return altData;
-      } catch (altErr) {
-        // Both primary and alternate failed
+  let lastErr = null;
+
+  for (const base of candidateBases) {
+    let candidateUrl = `${base}${normalizedEndpoint}`;
+    if (method === "GET") {
+      const separator = candidateUrl.includes("?") ? "&" : "?";
+      candidateUrl = `${candidateUrl}${separator}_t=${Date.now()}`;
+    }
+
+    try {
+      const data = await tryFetch(candidateUrl);
+      clearTimeout(timeoutId);
+      return data;
+    } catch (err) {
+      lastErr = err;
+      // If client-side explicit abort or client validation error (400 Bad Request, not 404), do not query other endpoints
+      if (err.name === "AbortError" || (err.status >= 400 && err.status < 500 && !err.isHtml && err.status !== 404)) {
+        break;
       }
     }
-
-    clearTimeout(timeoutId);
-
-    if (isBookingRelated) {
-      const isTimeout = primaryErr.name === "AbortError";
-      const failureMsg = isTimeout
-        ? "Reservation request timed out. Please check your network connection."
-        : (primaryErr.message || "Failed to reach reservation server. Please check your connection.");
-      const error = new Error(failureMsg, { cause: primaryErr });
-      error.status = primaryErr.status || 500;
-      error.data = primaryErr.data || { message: failureMsg };
-      throw error;
-    }
-
-    if (primaryErr.status && primaryErr.status !== 404 && primaryErr.status !== 502 && primaryErr.status !== 504) {
-      throw primaryErr;
-    }
-    return handleClientFallback(endpoint, options, primaryErr);
   }
+
+  clearTimeout(timeoutId);
+
+  // If this was an explicit customer booking submission that failed to reach the database, notify caller
+  if (isBookingSubmission) {
+    const isTimeout = lastErr?.name === "AbortError";
+    const failureMsg = isTimeout
+      ? "Reservation request timed out. Please check your network connection."
+      : (lastErr?.message || "Failed to reach reservation server. Please check your connection.");
+    const error = new Error(failureMsg, { cause: lastErr });
+    error.status = lastErr?.status || 500;
+    error.data = lastErr?.data || { message: failureMsg };
+    throw error;
+  }
+
+  // Gracefully fall back to client engine with synchronized 12 tables and offline storage
+  return handleClientFallback(endpoint, options, lastErr);
 }
 
 function timeToMinutesDemo(timeStr) {
