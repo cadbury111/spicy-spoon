@@ -38,10 +38,10 @@ function resolveApiBaseUrl() {
     if (/^(\d{1,3}\.){3}\d{1,3}$/.test(hostname)) {
       return `${protocol}//${hostname}:5000/api`;
     }
-    // For Vercel production or any domain, use same-origin relative API path "/api"
-    return "/api";
+    // Production default: Render production backend API URL
+    return "https://spicy-spoon-6.onrender.com/api";
   }
-  return "/api";
+  return "https://spicy-spoon-6.onrender.com/api";
 }
 
 const API_BASE_URL = resolveApiBaseUrl();
@@ -170,7 +170,10 @@ async function request(endpoint, options = {}) {
     endpoint.includes("/tables") ||
     endpoint.startsWith("/tables");
 
-  let url = `${API_BASE_URL}${endpoint}`;
+  const cleanEndpoint = endpoint.startsWith("/api/") ? endpoint.slice(4) : (endpoint === "/api" ? "" : endpoint);
+  const normalizedEndpoint = cleanEndpoint.startsWith("/") ? cleanEndpoint : `/${cleanEndpoint}`;
+
+  let url = `${API_BASE_URL}${normalizedEndpoint}`;
   const method = (options.method || "GET").toUpperCase();
 
   // Cache-busting timestamp parameter for availability and table queries
@@ -266,7 +269,7 @@ async function request(endpoint, options = {}) {
     const isLocal = typeof window !== "undefined" && (window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1");
     if (!isLocal && typeof window !== "undefined") {
       const altBase = API_BASE_URL.startsWith("http") ? "/api" : "https://spicy-spoon-6.onrender.com/api";
-      let altUrl = `${altBase}${endpoint}`;
+      let altUrl = `${altBase}${normalizedEndpoint}`;
       if (isBookingRelated && method === "GET") {
         const separator = altUrl.includes("?") ? "&" : "?";
         altUrl = `${altUrl}${separator}_t=${Date.now()}`;

@@ -1,0 +1,12 @@
+services:
+  - type: web
+    name: spicy-spoon-6
+    runtime: node
+    plan: free
+    buildCommand: npm install
+    startCommand: node server.js
+    envVars:
+      - key: NODE_VERSION
+        value: 22.14.0
+      - key: PORT
+        value: 5000

@@ -5,11 +5,12 @@
     "start": "node server.js",
     "dev:backend": "cd backend && node server.js",
     "dev:frontend": "cd frontend && npm run dev",
-    "build": "cd frontend && npm install && npm run build",
+    "build": "echo 'Backend build complete'",
+    "build:frontend": "cd frontend && npm install && npm run build",
     "db:setup": "node backend/db/setup-db.js"
   },
   "engines": {
-    "node": ">=22.x"
+    "node": ">=18.x"
   },
   "dependencies": {
     "@libsql/client": "^0.18.0",
