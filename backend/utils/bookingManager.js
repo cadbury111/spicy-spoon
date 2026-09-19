@@ -136,10 +136,11 @@ async function checkAndReleaseExpiredBookings(customNow = null) {
             shouldClearSession = false;
           }
 
-          // If table was reserved for this booking or currently marked RESERVED, reset it
+          // If table was reserved for this booking or currently marked RESERVED / BOOKED, reset it
           const isAssignedToThisBooking =
             table.current_booking_id === bk.id ||
-            table.status === "RESERVED";
+            table.status === "RESERVED" ||
+            table.status === "BOOKED";
 
           if (isAssignedToThisBooking) {
             await db.execute(`

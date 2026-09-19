@@ -211,6 +211,8 @@ async function request(endpoint, options = {}) {
     config.signal = controller.signal;
   }
 
+  const isBookingSubmission = endpoint.startsWith("/bookings") && method === "POST";
+
   try {
     const response = await fetch(url, config);
     clearTimeout(timeoutId);
@@ -232,19 +234,29 @@ async function request(endpoint, options = {}) {
         text.trim().startsWith("<html") ||
         text.trim().startsWith("<!doctype");
       if (isHtml) {
-        console.warn(`[API] Received HTML fallback for ${endpoint}. Falling back to client-side data.`);
+        console.warn(`[API] Received HTML fallback for ${endpoint}.`);
+        if (isBookingSubmission) {
+          const err = new Error("Reservation server returned an unexpected response. Please try again.");
+          err.status = 502;
+          throw err;
+        }
         return handleClientFallback(endpoint, options);
       }
       try {
         data = JSON.parse(text);
       } catch (e) {
-        console.warn(`[API] Non-JSON response for ${endpoint}. Falling back to client-side data.`);
+        console.warn(`[API] Non-JSON response for ${endpoint}.`);
+        if (isBookingSubmission) {
+          const err = new Error("Reservation server returned invalid JSON. Please try again.");
+          err.status = 502;
+          throw err;
+        }
         return handleClientFallback(endpoint, options);
       }
     }
 
     if (!response.ok) {
-      if (response.status === 404 || response.status === 502 || response.status === 504) {
+      if (!isBookingSubmission && (response.status === 404 || response.status === 502 || response.status === 504)) {
         console.warn(`[API] Status ${response.status} for ${endpoint}. Falling back to client-side data.`);
         return handleClientFallback(endpoint, options);
       }
@@ -257,18 +269,18 @@ async function request(endpoint, options = {}) {
     return data;
   } catch (netOrHttpErr) {
     clearTimeout(timeoutId);
+    if (isBookingSubmission) {
+      const isTimeout = netOrHttpErr.name === "AbortError";
+      const failureMsg = isTimeout
+        ? "Booking request timed out. Please check your network connection."
+        : (netOrHttpErr.message || "Failed to reach reservation server. Please check your connection.");
+      const error = new Error(failureMsg, { cause: netOrHttpErr });
+      error.status = netOrHttpErr.status || 500;
+      error.data = netOrHttpErr.data || { message: failureMsg };
+      throw error;
+    }
     if (netOrHttpErr.status && netOrHttpErr.status !== 404 && netOrHttpErr.status !== 502 && netOrHttpErr.status !== 504) {
       throw netOrHttpErr;
-    }
-    const isTimeout = netOrHttpErr.name === "AbortError";
-    const failureMsg = isTimeout
-      ? "Booking request timed out. Please check your network or server connection."
-      : (netOrHttpErr.message || "Failed to reach reservation server. Please check your connection.");
-
-    if (endpoint.startsWith("/bookings") && method === "POST") {
-      const error = new Error(failureMsg, { cause: netOrHttpErr });
-      error.data = { message: failureMsg };
-      throw error;
     }
     return handleClientFallback(endpoint, options, netOrHttpErr);
   }

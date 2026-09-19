@@ -138,14 +138,14 @@ router.get("/", async (req, res) => {
         liveOrderNumber = t.order_number;
       } else if (currentActiveBooking) {
         // Table is currently reserved in active window
-        liveStatus = "RESERVED";
+        liveStatus = "BOOKED";
         liveBookingCustomer = currentActiveBooking.customer_name;
         liveBookingStart = currentActiveBooking.start_time;
         liveBookingEnd = currentActiveBooking.end_time;
         liveBookingPhone = currentActiveBooking.customer_phone;
         liveBookingNumber = currentActiveBooking.booking_number;
-      } else if (t.status === "RESERVED" && activeOrUpcoming) {
-        liveStatus = "RESERVED";
+      } else if ((t.status === "RESERVED" || t.status === "BOOKED") && activeOrUpcoming) {
+        liveStatus = "BOOKED";
         liveBookingCustomer = activeOrUpcoming.customer_name;
         liveBookingStart = activeOrUpcoming.start_time;
         liveBookingEnd = activeOrUpcoming.end_time;
@@ -186,9 +186,11 @@ router.get("/", async (req, res) => {
         }
       }
 
+      const effectiveStatus = (!isAvailableForSlot && slotStatus === "RESERVED") ? "BOOKED" : liveStatus;
+
       return {
         ...t,
-        status: liveStatus,
+        status: effectiveStatus,
         order_number: liveOrderNumber,
         booking_customer: resolvedCustomer,
         booking_phone: resolvedPhone,
@@ -258,6 +260,7 @@ router.put("/:id/status", verifyStaffAuth(["ADMIN"]), async (req, res) => {
     const validStatuses = [
       "AVAILABLE",
       "RESERVED",
+      "BOOKED",
       "OCCUPIED",
       "ORDER_PLACED",
       "PAYMENT_PENDING",

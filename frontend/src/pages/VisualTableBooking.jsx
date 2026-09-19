@@ -441,7 +441,7 @@ function VisualTableBooking({ slug = "spicy-spoon" }) {
             </div>
             <button className="btn-primary-reserve" onClick={() => { setModalError(""); setShowBookingModal(true); }}>
               <BookmarkCheck size={20} />
-              <span>BOOK TABLE {selectedTable.table_number} NOW →</span>
+              <span>Reserve Table {selectedTable.table_number} →</span>
             </button>
           </div>
         ) : (
@@ -520,7 +520,7 @@ function VisualTableBooking({ slug = "spicy-spoon" }) {
                       let statusClass = "available";
                       if (isSelected) statusClass = "selected";
                       else if (isLowCapacity) statusClass = "disabled-capacity";
-                      else if (table.slotStatus === "RESERVED" || !table.isAvailableForSlot) statusClass = "reserved";
+                      else if (table.slotStatus === "RESERVED" || table.slotStatus === "BOOKED" || table.status === "BOOKED" || table.status === "RESERVED" || !table.isAvailableForSlot) statusClass = "reserved";
 
                       return (
                         <div
@@ -555,14 +555,14 @@ function VisualTableBooking({ slug = "spicy-spoon" }) {
                                 setShowBookingModal(true);
                               }}
                             >
-                              ✓ Reserve Now
+                              ✓ Reserve Table
                             </button>
                           )}
 
                           {isLowCapacity && <div className="table-status-pill">Max {table.capacity}</div>}
                           {isBooked && (
                             <div className="table-status-pill booked-slot-pill" title={table.conflictReason || `Booked for this time: ${selectedTime}`}>
-                              <span className="booked-badge-txt">🔒 Reserved</span>
+                              <span className="booked-badge-txt">🔒 Booked</span>
                               <span className="booked-time-slot">
                                 {table.booked_time_slot || (table.conflictReason ? table.conflictReason.replace(/^Booked for this time:\s*/i, "") : selectedTime)}
                               </span>
@@ -600,7 +600,7 @@ function VisualTableBooking({ slug = "spicy-spoon" }) {
               setShowBookingModal(true);
             }}
           >
-            <span>Proceed to Reserve Table {selectedTable.table_number}</span>
+            <span>Reserve Table {selectedTable.table_number} →</span>
             <ChevronRight size={18} />
           </button>
         </div>

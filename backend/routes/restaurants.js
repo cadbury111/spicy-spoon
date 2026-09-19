@@ -171,7 +171,9 @@ router.get("/:slug/tables", async (req, res) => {
 
       // Check time overlap on target date
       if (date && time && requestedEndTime) {
-        const bookingsForTable = activeBookings.filter((bk) => bk.table_id === t.id);
+        const bookingsForTable = activeBookings.filter(
+          (bk) => String(bk.table_id) === String(t.id) || (bk.table_number && t.table_number && String(bk.table_number) === String(t.table_number))
+        );
 
         for (const bk of bookingsForTable) {
           if (hasTimeOverlap(time, requestedEndTime, bk.start_time, bk.end_time)) {
@@ -186,8 +188,11 @@ router.get("/:slug/tables", async (req, res) => {
         }
       }
 
+      const effectiveStatus = (!isAvailableForSlot && slotStatus === "RESERVED") ? "BOOKED" : t.status;
+
       return {
         ...t,
+        status: effectiveStatus,
         slotStatus,
         isAvailableForSlot,
         conflictReason,

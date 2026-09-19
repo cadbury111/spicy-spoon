@@ -673,7 +673,7 @@ function Admin({ onLogout }) {
             <div className="floormap-header-controls">
               <div className="floor-summary-chips">
                 <span className="chip available">🟢 Available ({(Array.isArray(tables) ? tables : []).filter((t) => t.status === "AVAILABLE").length})</span>
-                <span className="chip reserved">🟡 Reserved ({(Array.isArray(tables) ? tables : []).filter((t) => t.status === "RESERVED").length})</span>
+                <span className="chip reserved">🟡 Booked ({(Array.isArray(tables) ? tables : []).filter((t) => t.status === "BOOKED" || t.status === "RESERVED").length})</span>
                 <span className="chip occupied">🔴 Occupied ({(Array.isArray(tables) ? tables : []).filter((t) => ["OCCUPIED", "ORDER_PLACED"].includes(t.status)).length})</span>
                 <span className="chip payment">💳 Payment Pending ({(Array.isArray(tables) ? tables : []).filter((t) => t.status === "PAYMENT_PENDING").length})</span>
               </div>
@@ -700,7 +700,9 @@ function Admin({ onLogout }) {
                         >
                           <div className="tbl-card-top">
                             <span className="tbl-number">{tbl.table_number}</span>
-                            <span className={`tbl-status-badge ${tbl.status.toLowerCase()}`}>{tbl.status}</span>
+                            <span className={`tbl-status-badge ${tbl.status.toLowerCase()}`}>
+                              {tbl.status === "RESERVED" ? "BOOKED" : tbl.status}
+                            </span>
                           </div>
                           <div className="tbl-card-body">
                             <p className="tbl-cap">👥 {tbl.capacity} Seats</p>
@@ -1289,14 +1291,14 @@ function Admin({ onLogout }) {
                     🟢 Available
                   </button>
                   <button
-                    className={`btn-override ${selectedTable.status === "RESERVED" ? "active yellow" : ""}`}
+                    className={`btn-override ${selectedTable.status === "RESERVED" || selectedTable.status === "BOOKED" ? "active yellow" : ""}`}
                     onClick={async () => {
                       await api.updateTableStatus(selectedTable.id, { status: "RESERVED" });
                       setSelectedTable({ ...selectedTable, status: "RESERVED" });
                       fetchAllData();
                     }}
                   >
-                    🟡 Reserved
+                    🟡 Booked
                   </button>
                   <button
                     className={`btn-override ${selectedTable.status === "OCCUPIED" ? "active red" : ""}`}

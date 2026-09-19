@@ -512,7 +512,8 @@
   background: rgba(16, 185, 129, 0.08);
 }
 
-.admin-table-card.reserved {
+.admin-table-card.reserved,
+.admin-table-card.booked {
   border-color: #f59e0b;
   background: rgba(245, 158, 11, 0.08);
 }
@@ -548,7 +549,8 @@
 }
 
 .tbl-status-badge.available { background: #10b981; color: #fff; }
-.tbl-status-badge.reserved { background: #f59e0b; color: #000; }
+.tbl-status-badge.reserved,
+.tbl-status-badge.booked { background: #f59e0b; color: #000; }
 .tbl-status-badge.occupied { background: #ef4444; color: #fff; }
 
 .tbl-card-body p {
